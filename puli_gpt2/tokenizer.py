@@ -3,10 +3,12 @@ import os
 
 from sentencepiece import SentencePieceProcessor
 
+from puli_gpt2 import config
+
 
 class Tokenizer:
 
-    def __init__(self, model_file: str) -> None:
+    def __init__(self, model_file: str = config.TOKENISER_MODEL_PATH) -> None:
 
         assert os.path.isfile(model_file), model_file
 

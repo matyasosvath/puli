@@ -13,8 +13,8 @@ from puli_gpt2 import config
 @dataclass
 class ModelArgs:
     batch_size: int = 32
-    context_length: int = 1024 # max_len
-    vocab_size: int = -1  # defined later by tokenizer
+    context_length: int = 1024
+    vocab_size: int = 50_257
     betas: Tuple[float, float] = (0.9, 0.98)
     dropout: float = 0.1
     d_model: int = 512
