@@ -7,10 +7,13 @@ import random
 import tiktoken
 import numpy as np
 from tqdm import tqdm
+from transformers import get_scheduler
 from torch.utils.data import Dataset, DataLoader
 import torch.distributed as dist
+import torch.multiprocessing as mp
 from torch.nn.parallel import DistributedDataParallel as DDP
 from torch.utils.data.distributed import DistributedSampler
+from torch.distributed import init_process_group, destroy_process_group
 
 from puli_gpt2 import config
 from puli_gpt2.model import ModelArgs, GPTModel
@@ -21,39 +24,17 @@ TRAIN_PATH = "./input.txt"
 TEST_PATH = "./input.txt"
 
 
-world_size = int(os.environ['WORLD_SIZE']) if 'WORLD_SIZE' in os.environ else 1
-global_rank = int(os.environ['RANK']) if 'RANK' in os.environ else 0
-local_rank = int(os.environ['LOCAL_RANK']) if 'LOCAL_RANK' in os.environ else 0
+def setup(
+    rank: int, # a unique process ID
+    world_size: int # total number of processes in the group
+) -> None:
 
-if world_size > 1:
-    torch.cuda.set_device(local_rank)
-    device = torch.device("cuda", local_rank)
-    dist.init_process_group(backend='nccl') if world_size > 1 else None
-else:
-    device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
+    os.environ['MASTER_ADDR'] = 'localhost' # assume all GPUs are on the same machine
+    os.environ['MASTER_PORT'] = '12345' # any free port on the machine
 
-if config.DETERMINISTIC:
-    seed = 0 + global_rank
-    random.seed(seed)
-    np.random.seed(seed)
-    torch.manual_seed(seed)
-    torch.cuda.manual_seed_all(seed)
-    torch.backends.cudnn.deterministic = True
-    torch.backends.cudnn.benchmark = False
-
-
-model_args = ModelArgs()
-
-model = GPTModel(model_args)
-model = model.to(device)
-
-
-tokenizer = tiktoken.get_encoding("gpt2")
-
-if world_size > 1:
-    model = DDP(model, device_ids=[local_rank], output_device=local_rank,  find_unused_parameters=True)
-
-optimizer = torch.optim.AdamW(model.parameters(), lr=model_args.lr)
+    # nccl: NVIDIA Collective Communication Library
+    init_process_group(backend="nccl", rank=rank, world_size=world_size)
+    torch.cuda.set_device(rank)
 
 
 class GPTDataset(Dataset):
@@ -90,7 +71,7 @@ def train(
     test_dataloader: DataLoader,
     model: torch.nn.Module,
     model_args: ModelArgs,
-    gpu: int
+    gpu
 ) -> Dict[str, List]:
 
     results = {
@@ -236,8 +217,9 @@ def test_step(
     return test_loss, test_acc
 
 
+def main(rank: int, world_size: int, model_args: ModelArgs) -> None:
 
-if __name__ == "__main__":
+    setup(rank, world_size)  # initialize process groups
 
     with open(TRAIN_PATH, "r", encoding="utf-8") as f:
         train_data = f.read()
@@ -247,16 +229,18 @@ if __name__ == "__main__":
         test_data = f.read()
         print(f'Test data has {len(test_data)} characters.')
 
+
+    tokenizer = tiktoken.get_encoding("gpt2")
+
     train_dataset = GPTDataset(train_data, tokenizer, model_args.context_length, model_args.context_length // 2)
     test_dataset = GPTDataset(test_data, tokenizer, model_args.context_length, model_args.context_length // 2)
 
-    train_sampler = DistributedSampler(train_dataset, num_replicas=world_size, rank=local_rank)
-    eval_sampler = DistributedSampler(test_dataset, num_replicas=world_size, rank=local_rank)
+    train_sampler = DistributedSampler(train_dataset, num_replicas=world_size, rank=rank)
+    eval_sampler = DistributedSampler(test_dataset, num_replicas=world_size, rank=rank)
 
     train_dataloader = DataLoader(
         train_dataset,
         batch_size=model_args.batch_size,
-        pin_memory=True,
         sampler=train_sampler,
         shuffle=(train_sampler is None),
     )
@@ -266,4 +250,79 @@ if __name__ == "__main__":
         batch_size=model_args.batch_size,
         sampler=eval_sampler,
         shuffle=(eval_sampler is None),
+    )
+
+    model = GPTModel(model_args)
+    model.to(rank)
+    model = DDP(model, device_ids=[rank])
+
+    loss_fn = torch.nn.CrossEntropyLoss(ignore_index=config.PAD_IDX)
+    optimizer = torch.optim.AdamW(model.parameters(), model_args.lr, model_args.betas, model_args.eps)
+    lr_scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=1, gamma=0.1)
+
+    pre_epoch = 0
+    best_epoch = 0
+    min_eval_loss = float('inf')
+
+    for epoch in range(1+pre_epoch, config.EPOCHS+1):
+
+        train_sampler.set_epoch(epoch)
+        eval_sampler.set_epoch(epoch)
+
+        print('-' * 21 + "Epoch " + str(epoch) + '-' * 21)
+
+        train_loss, train_acc, token_seen = train_step(model, train_dataloader, loss_fn, optimizer, rank)
+
+        eval_loss, test_acc = test_step(model, test_dataloader, loss_fn, rank)
+
+        lr_scheduler.step()
+
+        with open(config.LOGS_PATH,'a') as f:
+            f.write(
+                "Epoch "
+                + str(epoch)
+                + "\ntrain_loss: "
+                + str(train_loss)
+                + "\neval_loss: "
+                + str(eval_loss)
+                + "\ntime: "
+                + time.asctime(time.localtime(time.time()))
+                + "\n\n"
+            )
+
+        if eval_loss < min_eval_loss:
+
+            best_epoch = epoch
+            min_eval_loss = eval_loss
+            checkpoint = {
+                            'model': model.module.state_dict() if hasattr(model, "module") else model.state_dict(),
+                            'optimizer': optimizer.state_dict(),
+                            'lr_sched': lr_scheduler.state_dict(),
+                            'epoch': epoch,
+                            'best_epoch': best_epoch,
+                            'min_eval_loss': min_eval_loss
+                            }
+            torch.save(checkpoint, config.MODEL_PATH)
+
+        if world_size > 1:
+            dist.barrier()
+
+    destroy_process_group()
+
+
+if __name__ == "__main__":
+
+    print("CUDA available:", torch.cuda.is_available())
+    print("Number of GPUs available:", torch.cuda.device_count())
+
+    # spawn new processes
+
+    model_args = ModelArgs()
+
+    world_size = torch.cuda.device_count()
+
+    mp.spawn(
+        main,
+        args=(world_size, model_args), # spawn automatically passes rank param
+        nprocs=world_size # world_size spawns one process per GPU
     )

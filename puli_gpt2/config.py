@@ -12,3 +12,7 @@ TEMPERATURE = 1.0       # temperature scaling
 TOKENISER_MODEL_PATH = ""
 
 PAD_IDX = -100
+
+
+LOGS_PATH = "logs.txt"
+MODEL_PATH = "gpt-2.pt"
