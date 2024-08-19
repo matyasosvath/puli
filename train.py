@@ -15,9 +15,9 @@ from torch.nn.parallel import DistributedDataParallel as DDP
 from torch.utils.data.distributed import DistributedSampler
 from torch.distributed import init_process_group, destroy_process_group
 
-from puli_gpt2 import config
-from puli_gpt2.model import ModelArgs, GPTModel
-from puli_gpt2.tokenizer import Tokenizer
+from . import config
+from puli2.model import ModelArgs, GPTModel
+from puli2.tokenizer import Tokenizer
 
 
 TRAIN_PATH = "./input.txt"
@@ -269,31 +269,29 @@ def main(rank: int, world_size: int, model_args: ModelArgs) -> None:
         train_sampler.set_epoch(epoch)
         eval_sampler.set_epoch(epoch)
 
-        print('-' * 21 + "Epoch " + str(epoch) + '-' * 21)
+        epoch_start_time = time.time()
 
         train_loss, train_acc, token_seen = train_step(model, train_dataloader, loss_fn, optimizer, rank)
 
-        eval_loss, test_acc = test_step(model, test_dataloader, loss_fn, rank)
+        test_loss, test_acc = test_step(model, test_dataloader, loss_fn, rank)
 
         lr_scheduler.step()
 
-        with open(config.LOGS_PATH,'a') as f:
-            f.write(
-                "Epoch "
-                + str(epoch)
-                + "\ntrain_loss: "
-                + str(train_loss)
-                + "\neval_loss: "
-                + str(eval_loss)
-                + "\ntime: "
-                + time.asctime(time.localtime(time.time()))
-                + "\n\n"
+        if rank==0:
+            print(
+            f"Epoch: {epoch} | "
+            f"Time: {time.time() - epoch_start_time} | "
+            f"Train Loss: {train_loss:.4f} | "
+            f"Test Loss: {test_loss:.4f} | "
+            f"Train Acc: {train_acc:.4f} | "
+            f"Test Acc: {test_acc:.4f} | "
+            f"Token seen: {token_seen:.4f} | "
             )
 
-        if eval_loss < min_eval_loss:
+        if test_loss < min_eval_loss:
 
             best_epoch = epoch
-            min_eval_loss = eval_loss
+            min_eval_loss = test_loss
             checkpoint = {
                             'model': model.module.state_dict() if hasattr(model, "module") else model.state_dict(),
                             'optimizer': optimizer.state_dict(),

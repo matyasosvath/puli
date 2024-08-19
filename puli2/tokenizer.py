@@ -3,7 +3,7 @@ import os
 
 from sentencepiece import SentencePieceProcessor
 
-from puli_gpt2 import config
+from . import config
 
 
 class Tokenizer:

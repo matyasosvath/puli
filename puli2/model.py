@@ -7,23 +7,23 @@ import torch
 from torch import nn
 from torch.nn import functional as F
 
-from puli_gpt2 import config
+from . import config
 
 
 @dataclass
 class ModelArgs:
-    batch_size: int = 32
-    context_length: int = 1024
+    batch_size: int = 4
+    context_length: int = 256
     vocab_size: int = 50_257
     betas: Tuple[float, float] = (0.9, 0.98)
     dropout: float = 0.1
-    d_model: int = 512
+    d_model: int = 216
     eps: float = 1e-09
     d_ff: int = 2048
     lr: float = 3e-4
     lr_warmup: int = 16_000
-    n_heads: int = 8
-    n_layers: int =  6
+    n_heads: int = 4
+    n_layers: int =  3
     qkv_bias: bool = False
 
 
@@ -226,38 +226,3 @@ class GPTModel(nn.Module):
         elif isinstance(module, nn.Embedding):
             torch.nn.init.normal_(module.weight, mean=0.0, std=0.02)
 
-    @torch.no_grad()
-    def generate(
-        self,
-        input: torch.Tensor, # (batch_size, tokens)
-        max_new_tokens: int = config.MAX_NEW_TOKENS,
-        temperature: float = config.TEMPERATURE,
-        top_k: int = config.TOP_K,
-    ) -> torch.Tensor:
-
-        for _ in range(max_new_tokens):
-
-            idx_cond = ( # crop sequence len
-                input
-                if input.size(1) <= self.config.context_length
-                else input[:, -self.config.context_length :]
-            )
-
-            logits = self.forward(idx_cond)
-
-            # temperature scaling
-            logits = logits[:, -1, :] / temperature
-
-            if top_k is not None:
-                v, _ = torch.topk(logits, min(top_k, logits.size(-1)))
-                logits[logits < v[:, [-1]]] = -float('Inf')
-
-            # logits to (normalized) probabilities
-            probs = F.softmax(logits, dim=-1)
-
-             # decoding strategies, multinomial sampling
-            idx_next = torch.multinomial(probs, num_samples=1)
-
-            input = torch.cat((input, idx_next), dim=1)
-
-        return input
