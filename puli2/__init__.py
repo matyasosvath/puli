@@ -69,11 +69,7 @@ def load_model(
     return model.to(device)
 
 
-def from_pretrained():
-    from transformers import AutoModelForCausalLM
-    print("Loading weights from pretrained puli-gpt2.")
-    model_hf = AutoModelForCausalLM.from_pretrained("NYTK/PULI-GPT-2")
-    model_state = model_hf.state_dict()
-    model_keys = model_state.keys()
+
+
 
 

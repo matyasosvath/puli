@@ -11,7 +11,7 @@ from torch.nn import functional as F
 @dataclass
 class ModelArgs:
     batch_size: int = 4
-    context_length: int = 256
+    context_length: int = 1024
     vocab_size: int = 50_048
     betas: Tuple[float, float] = (0.9, 0.98)
     dropout: float = 0.1
@@ -63,19 +63,21 @@ class GELU(nn.Module):
         ))
 
 
-class FeedForward(nn.Module):
-    def __init__(self, d_model: int, dropout: float):
+class MLP(nn.Module):
+    def __init__(self, d_model: int, dropout: float) -> None:
         super().__init__()
 
-        self.layers = nn.Sequential(
-            nn.Linear(d_model, 4 * d_model),
-            GELU(),
-            nn.Dropout(dropout),
-            nn.Linear(4 * d_model, d_model),
-        )
+        self.c_fc = nn.Linear(d_model, 4 * d_model)
+        self.c_proj = nn.Linear(4 * d_model, d_model)
+        self.act = GELU()
+        self.dropout = nn.Dropout(dropout)
 
-    def forward(self, x: torch.Tensor):
-        return self.layers(x)
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        x = self.c_fc(x)
+        x = self.act(x)
+        x = self.c_proj(x)
+        x = self.dropout(x)
+        return x
 
 
 class MultiHeadedAttention(nn.Module):
@@ -96,15 +98,18 @@ class MultiHeadedAttention(nn.Module):
         self.head_dim = d_out // n_heads
         self.d_out = d_out
 
-        self.qkv = nn.Linear(d_in, 3 * d_out, bias=qkv_bias)
+        self.c_attn = nn.Linear(d_in, 3 * d_out, bias=qkv_bias)
         self.c_proj = nn.Linear(d_out, d_out)
+
+        self.attn_dropout = nn.Dropout(dropout)
+        self.resid_dropout = nn.Dropout(dropout)
         self.dropout = dropout
 
     def forward(self, x: torch.Tensor):
         batch_size, num_tokens, d_model = x.shape
 
         # (b, num_tokens, d_model) --> (b, num_tokens, 3 * d_model)
-        qkv = self.qkv(x)
+        qkv = self.c_attn(x)
 
         # (b, num_tokens, 3 * d_model) --> (b, num_tokens, 3, n_heads, head_dim)
         qkv = qkv.view(batch_size, num_tokens, 3, self.n_heads, self.head_dim)
@@ -127,7 +132,7 @@ class MultiHeadedAttention(nn.Module):
             .view(batch_size, num_tokens, self.d_out)
         )
 
-        context_vec = self.c_proj(context_vec)
+        context_vec = self.resid_dropout(self.c_proj(context_vec))
 
         return context_vec
 
@@ -147,12 +152,11 @@ class Block(nn.Module):
             )
 
         self.ln_2 = LayerNorm(config.d_model, config.eps)
-        self.mlp = FeedForward(config.d_model, config.dropout)
-        self.dropout = nn.Dropout(config.dropout)
+        self.mlp = MLP(config.d_model, config.dropout)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        x = x + self.dropout(self.attn(self.ln_1(x)))
-        x = x + self.dropout(self.mlp(self.ln_2(x)))
+        x = x + self.attn(self.ln_1(x))
+        x = x + self.mlp(self.ln_2(x))
         return x
 
 
@@ -208,9 +212,34 @@ class PuliGPT(nn.Module):
 
 if __name__ == "__main__":
 
-    model = PuliGPT(ModelArgs())
+    model_args = ModelArgs()
 
-    idx = torch.tensor([1,2,3]).unsqueeze(0)
-    print(idx.shape)
-    print(model(idx))
+    model = PuliGPT(model_args)
 
+    print(model)
+
+    # idx = torch.tensor([1,2,3]).unsqueeze(0)
+    # print(idx.shape)
+    # print(model(idx))
+
+    from transformers import AutoModelForCausalLM
+
+    print("Loading weights from pretrained puli-gpt2.")
+
+    hf_model = AutoModelForCausalLM.from_pretrained("NYTK/PULI-GPT-2")
+
+    print(hf_model)
+
+    hf_model_state = hf_model.state_dict()
+    hf_model_keys = hf_model_state.keys()
+
+
+    wte_weight = hf_model.base_model.wte.state_dict()["weight"]
+    print(wte_weight.shape)
+    wpe_weight = hf_model.base_model.wpe.state_dict()["weight"]
+    print(wpe_weight.shape)
+
+    
+
+
+    print("done")
