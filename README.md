@@ -1,2 +1,3 @@
-# puli-gpt2
-PyTorch implementation of NYTUD's PULI GPT-2 model.
+# Puli Models
+
+Pure PyTorch implementations of NYTUD's PULI models.
