@@ -1,31 +1,56 @@
 from typing import Any, Optional, Union
 
-import io
 import os
 import torch
 import urllib.request
 from tqdm import tqdm
 
 from .generation import Puli2
-from .model import ModelArgs, Puli2GPT
-from .tokenizer import Tokenizer
 
 
-_MODEL = {
+_MODELS = {
     "puli2-gpt": "https://nc.nlp.nytud.hu/s/p26z5Yzc3mAjo6K/download/puli-gpt2.pt"
 }
 
 
-def __download(url: str, root: str) -> Any:
+def load_model(
+    model_name: str,
+    model_path: Union[str, None] = None,
+    tokenizer_path: Union[str, None] = None,
+    device: Optional[Union[str, torch.device]] = None,
+) -> Any:
 
-    os.makedirs(root, exist_ok=True)
+    if model_name not in _MODELS:
+        raise RuntimeError(f"Model {model_name} not found; available models: {_MODELS}")
 
-    download_target = os.path.join(root, os.path.basename(url))
+    if device is None:
+        device = "cuda" if torch.cuda.is_available() else "cpu"
 
-    if os.path.exists(download_target) and not os.path.isfile(download_target):
-        raise RuntimeError(f"{download_target} exists and is not a regular file")
+    if model_path is None:
+        default = os.path.join(os.path.expanduser("~"), ".cache")
+        model_path = os.path.join(os.getenv("XDG_CACHE_HOME", default), "puli")
 
-    with urllib.request.urlopen(url) as source, open(download_target, "wb") as output:
+    model_url = _MODELS[model_name]
+
+    os.makedirs(model_path, exist_ok=True)
+    download_path = os.path.join(model_path, os.path.basename(model_url))
+
+    if os.path.isfile(download_path): print(f"Model path for {model_name} already exists! Skipping download")
+    else: _download(model_url, download_path)
+
+    puli = Puli2.build(download_path, tokenizer_path)
+
+    puli.model.to(device)
+
+    return puli
+
+
+def _download(url: str, download_path: str) -> Any:
+
+    if os.path.exists(download_path) and not os.path.isfile(download_path):
+        raise RuntimeError(f"{download_path} exists and is not a regular file")
+
+    with urllib.request.urlopen(url) as source, open(download_path, "wb") as output:
         with tqdm(
             total=int(source.info().get("Content-Length")),
             ncols=80,
@@ -41,35 +66,4 @@ def __download(url: str, root: str) -> Any:
                 output.write(buffer)
                 loop.update(len(buffer))
 
-    return download_target
-
-
-def load_model(
-    name: str,
-    model_path: str,
-    tokenizer_path: str,
-    device: Optional[Union[str, torch.device]] = None,
-) -> PuliGPT:
-
-    if device is None:
-        device = "cuda" if torch.cuda.is_available() else "cpu"
-
-    default = os.path.join(os.path.expanduser("~"), ".cache")
-    model_dir = os.path.join(os.getenv("XDG_CACHE_HOME", default), "puli")
-
-    if name in _MODEL:
-        model_path = __download(_MODEL[name], model_path)
-    elif os.path.isfile(name):
-        model_path = torch.load(model_path)
-    else:
-        raise RuntimeError(f"Model {name} not found; available models: {_MODEL}")
-
-    model = Puli2.build(model_path, tokenizer_path)
-
-    return model.to(device)
-
-
-
-
-
-
+    return download_path

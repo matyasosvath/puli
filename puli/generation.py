@@ -18,17 +18,17 @@ class Puli2:
         start_time = time.time()
 
         model_args = ModelArgs()
-        tokenizer = Tokenizer(tokenizer_path)
-        model_args.vocab_size = tokenizer.vocab_size
+        tokenizer = None
+        # tokenizer = Tokenizer(tokenizer_path)
+        # model_args.vocab_size = tokenizer.vocab_size
         model = Puli2GPT(model_args)
 
         assert model_path.endswith(".pth") or model_path.endswith(".pt"), "model_path should end with '.pt' or '.pth'"
 
-        print(f"Loading model from {model_path}")
-
         model.load_state_dict(torch.load(f=model_path, map_location="cpu"))
 
-        print(f"Loaded in {time.time() - start_time:.2f} seconds")
+        print(f"Model created and loaded in {time.time() - start_time:.2f} seconds from {model_path}")
+        print(f"Model has {model.get_num_params()/1e6}M parameters.")
 
         return Puli2(model, tokenizer, model_args)
 

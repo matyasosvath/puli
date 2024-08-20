@@ -175,10 +175,6 @@ class Puli2GPT(nn.Module):
         self.ln_f = LayerNorm(config.d_model, config.eps)
         self.lm_head = nn.Linear(config.d_model, config.vocab_size, bias=False)
 
-        self.apply(self._init_weights)
-
-        print(f"Number of parameters: {self.get_num_params()/1e6}M")
-
     def forward(self, idx: torch.Tensor):
 
         device = idx.device
@@ -196,15 +192,3 @@ class Puli2GPT(nn.Module):
 
     def get_num_params(self) -> int:
         return sum(p.numel() for p in self.parameters())
-
-    def _init_weights(self, module) -> None:
-
-        if isinstance(module, nn.Linear):
-
-            torch.nn.init.normal_(module.weight, mean=0.0, std=0.02)
-
-            if module.bias is not None:
-                torch.nn.init.zeros_(module.bias)
-
-        elif isinstance(module, nn.Embedding):
-            torch.nn.init.normal_(module.weight, mean=0.0, std=0.02)
