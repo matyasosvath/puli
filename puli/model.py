@@ -161,7 +161,7 @@ class Block(nn.Module):
         return x
 
 
-class PuliGPT(nn.Module):
+class Puli2GPT(nn.Module):
 
     def __init__(self, config: ModelArgs) -> None:
         super().__init__()

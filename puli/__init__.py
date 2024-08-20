@@ -7,12 +7,12 @@ import urllib.request
 from tqdm import tqdm
 
 from .generation import Puli2
-from .model import ModelArgs, PuliGPT
+from .model import ModelArgs, Puli2GPT
 from .tokenizer import Tokenizer
 
 
 _MODEL = {
-    "puli-gpt2": "https://nc.nlp.nytud.hu/s/p26z5Yzc3mAjo6K/download/puli-gpt2.pt"
+    "puli2-gpt": "https://nc.nlp.nytud.hu/s/p26z5Yzc3mAjo6K/download/puli-gpt2.pt"
 }
 
 

@@ -4,7 +4,7 @@ import time
 import torch
 import torch.nn.functional as F
 
-from .model import PuliGPT, ModelArgs
+from .model import Puli2GPT, ModelArgs
 from .tokenizer import Tokenizer
 
 
@@ -13,14 +13,14 @@ class Puli2:
     @staticmethod
     def build(model_path: str, tokenizer_path: str, seed: int = 42) -> Puli2:
 
-
         torch.manual_seed(seed)
 
         start_time = time.time()
+
         model_args = ModelArgs()
         tokenizer = Tokenizer(tokenizer_path)
         model_args.vocab_size = tokenizer.vocab_size
-        model = PuliGPT(model_args)
+        model = Puli2GPT(model_args)
 
         assert model_path.endswith(".pth") or model_path.endswith(".pt"), "model_path should end with '.pt' or '.pth'"
 
@@ -32,7 +32,7 @@ class Puli2:
 
         return Puli2(model, tokenizer, model_args)
 
-    def __init__(self, model: PuliGPT, tokenizer: Tokenizer, model_args: ModelArgs):
+    def __init__(self, model: Puli2GPT, tokenizer: Tokenizer, model_args: ModelArgs) -> None:
         self.model = model
         self.tokenizer = tokenizer
         self.model_args = model_args
