@@ -224,27 +224,37 @@ if __name__ == "__main__":
 
     sd = model.state_dict()
     sd_keys = sd.keys()
-    print(sd_keys)
-    print(len(sd_keys))
 
-    # from transformers import AutoModelForCausalLM
+    from transformers import AutoModelForCausalLM
 
-    # print("Loading weights from pretrained puli-gpt2.")
+    print("Loading weights from pretrained puli-gpt2.")
 
-    # hf_model = AutoModelForCausalLM.from_pretrained("NYTK/PULI-GPT-2")
+    hf_model = AutoModelForCausalLM.from_pretrained("NYTK/PULI-GPT-2")
 
-    # print(hf_model)
+    print(hf_model)
 
-    # hf_model_state = hf_model.state_dict()
-    # hf_model_keys = hf_model_state.keys()
+    sd_hf = hf_model.state_dict()
+    sd_keys_hf = sd_hf.keys()
 
+    assert len(sd_keys_hf) == len(sd_keys), f"mismatched keys: {len(sd_keys_hf)} != {len(sd_keys)}"
+    assert all(sd_key == sd_key_hf.replace("transformer.", "") for sd_key, sd_key_hf in zip(sd_keys, sd_keys_hf)), "Keys differ"
 
-    # wte_weight = hf_model.base_model.wte.state_dict()["weight"]
-    # print(wte_weight.shape)
-    # wpe_weight = hf_model.base_model.wpe.state_dict()["weight"]
-    # print(wpe_weight.shape)
+    transposed = ['attn.c_attn.weight', 'attn.c_proj.weight', 'mlp.c_fc.weight', 'mlp.c_proj.weight']
 
+    for key_hf in sd_keys_hf:
+        print(f"hf key: {key_hf}")
+        key = key_hf.replace("transformer.", "")
+        print(f"key: {key}")
 
+        if any(key_hf.endswith(w) for w in transposed):
+            print(f"HF model shape: {sd_hf[key_hf].shape}")
+            print(f"HF model shape [::-1]: {sd_hf[key_hf].shape[::-1]}")
+            print(f"Model shape: {sd[key].shape}")
+            assert sd_hf[key_hf].shape[::-1] == sd[key].shape, "Shape mismatch"
+        else:
+            print(f"HF model shape: {sd_hf[key_hf].shape}")
+            print(f"Model shape: {sd[key].shape}")
+            assert sd_hf[key_hf].shape == sd[key].shape, "Shape mismatch"
 
 
     print("done")
