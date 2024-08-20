@@ -7,23 +7,21 @@ import torch
 from torch import nn
 from torch.nn import functional as F
 
-from . import config
-
 
 @dataclass
 class ModelArgs:
     batch_size: int = 4
     context_length: int = 256
-    vocab_size: int = 50_257
+    vocab_size: int = 50_048
     betas: Tuple[float, float] = (0.9, 0.98)
     dropout: float = 0.1
-    d_model: int = 216
-    eps: float = 1e-09
+    d_model: int = 1024
+    eps: float = 1e-05
     d_ff: int = 2048
     lr: float = 3e-4
     lr_warmup: int = 16_000
     n_heads: int = 4
-    n_layers: int =  3
+    n_layers: int =  24
     qkv_bias: bool = False
 
 
@@ -86,7 +84,6 @@ class MultiHeadedAttention(nn.Module):
         d_in: int,
         d_out: int,
         n_heads: int,
-        context_length: int,
         dropout: float = 0.0,
         qkv_bias: bool = False,
     ) -> None:
@@ -96,12 +93,11 @@ class MultiHeadedAttention(nn.Module):
         assert d_out % n_heads == 0, "d_model is indivisible by n_heads"
 
         self.n_heads = n_heads
-        self.context_length = context_length
         self.head_dim = d_out // n_heads
         self.d_out = d_out
 
         self.qkv = nn.Linear(d_in, 3 * d_out, bias=qkv_bias)
-        self.proj = nn.Linear(d_out, d_out)
+        self.c_proj = nn.Linear(d_out, d_out)
         self.dropout = dropout
 
     def forward(self, x: torch.Tensor):
@@ -131,88 +127,70 @@ class MultiHeadedAttention(nn.Module):
             .view(batch_size, num_tokens, self.d_out)
         )
 
-        context_vec = self.proj(context_vec)
+        context_vec = self.c_proj(context_vec)
 
         return context_vec
 
 
-class DecoderBlock(nn.Module):
+class Block(nn.Module):
 
     def __init__(self, config: ModelArgs) -> None:
         super().__init__()
 
+        self.ln_1 = LayerNorm(config.d_model, config.eps)
         self.attn = MultiHeadedAttention(
             d_in=config.d_model,
             d_out=config.d_model,
-            context_length=config.context_length,
             n_heads=config.n_heads,
             dropout=config.dropout,
             qkv_bias=config.qkv_bias
             )
 
-        self.norm1 = LayerNorm(config.d_model, config.eps)
-        self.norm2 = LayerNorm(config.d_model, config.eps)
-        self.ff = FeedForward(config.d_model, config.dropout)
+        self.ln_2 = LayerNorm(config.d_model, config.eps)
+        self.mlp = FeedForward(config.d_model, config.dropout)
         self.dropout = nn.Dropout(config.dropout)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        x = x + self.dropout(self.attn(self.norm1(x)))
-        x = x + self.dropout(self.ff(self.norm2(x)))
+        x = x + self.dropout(self.attn(self.ln_1(x)))
+        x = x + self.dropout(self.mlp(self.ln_2(x)))
         return x
 
 
-class Decoder(nn.Module):
-
-    def __init__(self, config: ModelArgs) -> None:
-        super().__init__()
-
-        self.blocks = nn.Sequential(
-            *[DecoderBlock(config) for _ in range(config.n_layers)]
-        )
-
-    def forward(self, x) -> torch.Tensor:
-        return self.blocks(x)
-
-
-class GPTModel(nn.Module):
+class PuliGPT(nn.Module):
 
     def __init__(self, config: ModelArgs) -> None:
         super().__init__()
 
         self.config = config
 
-        self.tok_emb = Embeddings(config.vocab_size, config.d_model)
-        self.pos_emb = Embeddings(config.context_length, config.d_model)
-        self.dropout= nn.Dropout(config.dropout)
-        self.decoder = Decoder(config)
-        self.norm = LayerNorm(config.d_model, config.eps)
-        self.generator = nn.Linear(config.d_model, config.vocab_size, bias=False)
+        self.wte = nn.Embedding(config.vocab_size, config.d_model)
+        self.wpe = nn.Embedding(config.context_length, config.d_model)
+        self.drop= nn.Dropout(config.dropout)
+        self.h = nn.ModuleList([Block(config) for _ in range(config.n_layers)])
+        self.ln_f = LayerNorm(config.d_model, config.eps)
+        self.lm_head = nn.Linear(config.d_model, config.vocab_size, bias=False)
 
-        self.tok_emb.weight = self.generator.weight # https://paperswithcode.com/method/weight-tying
-
-        self.apply(self._init_weights)
+        # self.apply(self._init_weights)
 
         print(f"Number of parameters: {self.get_num_params()/1e6}M")
-
-    def get_num_params(self, non_embedding=False):
-        n_params = sum(p.numel() for p in self.parameters())
-        if non_embedding:
-            n_params -= self.tok_emb.weight.numel()
-        return n_params
 
     def forward(self, idx: torch.Tensor):
 
         device = idx.device
         batch_size, seq_len = idx.shape
 
-        tok_embeds = self.tok_emb(idx)
-        pos_embeds = self.pos_emb(torch.arange(seq_len, device=device))
+        tok_embeds = self.wte(idx)
+        pos_embeds = self.wpe(torch.arange(seq_len, device=device))
         x = tok_embeds + pos_embeds  # (batch_size, num_tokens, emb_size)
-        x = self.dropout(x)
-        x = self.decoder(x)
-        x = self.norm(x)
-        logits = self.generator(x)
+        x = self.drop(x)
+        for block in self.h:
+            x = block(x)
+        x = self.ln_f(x)
+        logits = self.lm_head(x)
         return logits
+
+    def get_num_params(self) -> int:
+        return sum(p.numel() for p in self.parameters())
 
     def _init_weights(self, module) -> None:
 
@@ -225,4 +203,14 @@ class GPTModel(nn.Module):
 
         elif isinstance(module, nn.Embedding):
             torch.nn.init.normal_(module.weight, mean=0.0, std=0.02)
+
+
+
+if __name__ == "__main__":
+
+    model = PuliGPT(ModelArgs())
+
+    idx = torch.tensor([1,2,3]).unsqueeze(0)
+    print(idx.shape)
+    print(model(idx))
 

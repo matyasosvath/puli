@@ -1,5 +1,4 @@
 
-
 EVAL_SPLIT = 0.01       # train-test split
 
 EPOCHS = 32             # number of epochs to train for (if early stopping doesn't intervene)
@@ -16,3 +15,6 @@ PAD_IDX = -100
 
 LOGS_PATH = "logs.txt"
 MODEL_PATH = "gpt-2.pt"
+
+TRAIN_PATH = "./input.txt"
+TEST_PATH = "./input.txt"

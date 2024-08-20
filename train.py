@@ -15,13 +15,9 @@ from torch.nn.parallel import DistributedDataParallel as DDP
 from torch.utils.data.distributed import DistributedSampler
 from torch.distributed import init_process_group, destroy_process_group
 
-from . import config
-from puli2.model import ModelArgs, GPTModel
-from puli2.tokenizer import Tokenizer
+import config
+from puli2 import ModelArgs, GPTModel, Tokenizer
 
-
-TRAIN_PATH = "./input.txt"
-TEST_PATH = "./input.txt"
 
 
 def setup(

@@ -3,13 +3,13 @@ from __future__ import annotations
 import torch
 import torch.nn.functional as F
 
-from puli2.model import GPTModel, ModelArgs
-from puli2.tokenizer import Tokenizer
+from .model import PuliGPT, ModelArgs
+from .tokenizer import Tokenizer
 
 
 class Puli2:
 
-    def __init__(self, model: GPTModel, tokenizer: Tokenizer, model_args: ModelArgs):
+    def __init__(self, model: PuliGPT, tokenizer: Tokenizer, model_args: ModelArgs):
         self.model = model
         self.tokenizer = tokenizer
         self.model_args = model_args
@@ -19,7 +19,7 @@ class Puli2:
 
         model_args = ModelArgs()
 
-        model = GPTModel(model_args)
+        model = PuliGPT(model_args)
         tokenizer = Tokenizer(tokenizer_path)
 
         assert model_path.endswith(".pth") or model_path.endswith(".pt"), "model_path should end with '.pt' or '.pth'"

@@ -6,8 +6,8 @@ def get_requirements(path: str):
 
 
 setup(
-    name="puli-gpt2",
-    version="0.0.1",
+    name="puli2",
+    version="0.0.2",
     packages=find_packages(),
     install_requires=get_requirements("requirements.txt"),
 )
