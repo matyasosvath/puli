@@ -1,3 +1,4 @@
+from pathlib import Path
 from typing import Tuple
 
 import math
@@ -209,6 +210,18 @@ class PuliGPT(nn.Module):
             torch.nn.init.normal_(module.weight, mean=0.0, std=0.02)
 
 
+def save_model(model: torch.nn.Module, model_name: str, target_dir: str = "models", log: bool = True) -> None:
+
+    target_dir_path = Path(target_dir)
+    target_dir_path.mkdir(parents=True, exist_ok=True)
+
+    assert model_name.endswith(".pth") or model_name.endswith(".pt"), "model_name should end with '.pt' or '.pth'"
+    model_save_path = target_dir_path / model_name
+
+    print(f"Saving model to: {model_save_path}") if log else None
+
+    torch.save(obj=model.state_dict(), f=model_save_path)
+
 
 if __name__ == "__main__":
 
@@ -251,10 +264,17 @@ if __name__ == "__main__":
             print(f"HF model shape [::-1]: {sd_hf[key_hf].shape[::-1]}")
             print(f"Model shape: {sd[key].shape}")
             assert sd_hf[key_hf].shape[::-1] == sd[key].shape, "Shape mismatch"
+
+            with torch.no_grad():
+                sd[key].copy_(sd_hf[key_hf].t())
         else:
             print(f"HF model shape: {sd_hf[key_hf].shape}")
             print(f"Model shape: {sd[key].shape}")
             assert sd_hf[key_hf].shape == sd[key].shape, "Shape mismatch"
 
+            with torch.no_grad():
+                sd[key].copy_(sd_hf[key_hf])
+
+    save_model(model, "puli-gpt2.pt")
 
     print("done")
