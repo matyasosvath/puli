@@ -22,7 +22,7 @@ class ModelArgs:
     lr_warmup: int = 16_000
     n_heads: int = 4
     n_layers: int =  24
-    qkv_bias: bool = False
+    qkv_bias: bool = True
 
 
 class Embeddings(nn.Module):
@@ -40,15 +40,15 @@ class LayerNorm(nn.Module):
     def __init__(self, d_model: int, eps: float) -> None:
         super().__init__()
 
+        self.weight = nn.Parameter(torch.ones(d_model)) # scale
+        self.bias = nn.Parameter(torch.zeros(d_model)) # shift
         self.eps = eps
-        self.scale = nn.Parameter(torch.ones(d_model))
-        self.shift = nn.Parameter(torch.zeros(d_model))
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         mean = x.mean(dim=-1, keepdim=True)
         var = x.var(dim=-1, keepdim=True, unbiased=False)
         norm_x = (x - mean) / torch.sqrt(var + self.eps)
-        return self.scale * norm_x + self.shift
+        return self.weight * norm_x + self.bias
 
 
 class GELU(nn.Module):
@@ -87,7 +87,7 @@ class MultiHeadedAttention(nn.Module):
         d_out: int,
         n_heads: int,
         dropout: float = 0.0,
-        qkv_bias: bool = False,
+        qkv_bias: bool = True,
     ) -> None:
 
         super().__init__()
@@ -218,28 +218,33 @@ if __name__ == "__main__":
 
     print(model)
 
-    # idx = torch.tensor([1,2,3]).unsqueeze(0)
-    # print(idx.shape)
-    # print(model(idx))
+    idx = torch.tensor([1,2,3]).unsqueeze(0)
+    print(idx.shape)
+    print(model(idx))
 
-    from transformers import AutoModelForCausalLM
+    sd = model.state_dict()
+    sd_keys = sd.keys()
+    print(sd_keys)
+    print(len(sd_keys))
 
-    print("Loading weights from pretrained puli-gpt2.")
+    # from transformers import AutoModelForCausalLM
 
-    hf_model = AutoModelForCausalLM.from_pretrained("NYTK/PULI-GPT-2")
+    # print("Loading weights from pretrained puli-gpt2.")
 
-    print(hf_model)
+    # hf_model = AutoModelForCausalLM.from_pretrained("NYTK/PULI-GPT-2")
 
-    hf_model_state = hf_model.state_dict()
-    hf_model_keys = hf_model_state.keys()
+    # print(hf_model)
+
+    # hf_model_state = hf_model.state_dict()
+    # hf_model_keys = hf_model_state.keys()
 
 
-    wte_weight = hf_model.base_model.wte.state_dict()["weight"]
-    print(wte_weight.shape)
-    wpe_weight = hf_model.base_model.wpe.state_dict()["weight"]
-    print(wpe_weight.shape)
+    # wte_weight = hf_model.base_model.wte.state_dict()["weight"]
+    # print(wte_weight.shape)
+    # wpe_weight = hf_model.base_model.wpe.state_dict()["weight"]
+    # print(wpe_weight.shape)
 
-    
+
 
 
     print("done")
