@@ -11,10 +11,12 @@ from .model import ModelArgs, PuliGPT
 from .tokenizer import Tokenizer
 
 
-_MODEL = "TODO"
+_MODEL = {
+    "puli-gpt2": "https://nc.nlp.nytud.hu/s/p26z5Yzc3mAjo6K/download/puli-gpt2.pt"
+}
 
 
-def _download(url: str, root: str) -> Any:
+def __download(url: str, root: str) -> Any:
 
     os.makedirs(root, exist_ok=True)
 
@@ -39,32 +41,30 @@ def _download(url: str, root: str) -> Any:
                 output.write(buffer)
                 loop.update(len(buffer))
 
-    return torch.load(f=download_target)
+    return download_target
 
 
 def load_model(
     name: str,
+    model_path: str,
+    tokenizer_path: str,
     device: Optional[Union[str, torch.device]] = None,
-    download_root: Optional[Union[str, None]] = None
 ) -> PuliGPT:
 
     if device is None:
         device = "cuda" if torch.cuda.is_available() else "cpu"
 
-    if download_root is None:
-        default = os.path.join(os.path.expanduser("~"), ".cache")
-        download_root = os.path.join(os.getenv("XDG_CACHE_HOME", default), "puli2")
+    default = os.path.join(os.path.expanduser("~"), ".cache")
+    model_dir = os.path.join(os.getenv("XDG_CACHE_HOME", default), "puli")
 
-    if name == _MODEL:
-        model_state_dict = _download(_MODEL, download_root)
+    if name in _MODEL:
+        model_path = __download(_MODEL[name], model_path)
     elif os.path.isfile(name):
-        model_state_dict = torch.load(download_root)
+        model_path = torch.load(model_path)
     else:
-        raise RuntimeError(f"Model {name} not found; available model: {_MODEL}")
+        raise RuntimeError(f"Model {name} not found; available models: {_MODEL}")
 
-    dims = ModelArgs()
-    model = PuliGPT(dims)
-    model.load_state_dict(model_state_dict)
+    model = Puli2.build(model_path, tokenizer_path)
 
     return model.to(device)
 

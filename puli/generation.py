@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import time
 import torch
 import torch.nn.functional as F
 
@@ -9,26 +10,32 @@ from .tokenizer import Tokenizer
 
 class Puli2:
 
-    def __init__(self, model: PuliGPT, tokenizer: Tokenizer, model_args: ModelArgs):
-        self.model = model
-        self.tokenizer = tokenizer
-        self.model_args = model_args
-
     @staticmethod
-    def build(model_path: str, tokenizer_path: str) -> Puli2:
+    def build(model_path: str, tokenizer_path: str, seed: int = 42) -> Puli2:
 
+
+        torch.manual_seed(seed)
+
+        start_time = time.time()
         model_args = ModelArgs()
-
-        model = PuliGPT(model_args)
         tokenizer = Tokenizer(tokenizer_path)
+        model_args.vocab_size = tokenizer.vocab_size
+        model = PuliGPT(model_args)
 
         assert model_path.endswith(".pth") or model_path.endswith(".pt"), "model_path should end with '.pt' or '.pth'"
 
         print(f"Loading model from {model_path}")
 
-        model.load_state_dict(torch.load(f=model_path))
+        model.load_state_dict(torch.load(f=model_path, map_location="cpu"))
+
+        print(f"Loaded in {time.time() - start_time:.2f} seconds")
 
         return Puli2(model, tokenizer, model_args)
+
+    def __init__(self, model: PuliGPT, tokenizer: Tokenizer, model_args: ModelArgs):
+        self.model = model
+        self.tokenizer = tokenizer
+        self.model_args = model_args
 
     @torch.no_grad()
     def generate(

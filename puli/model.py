@@ -175,7 +175,7 @@ class PuliGPT(nn.Module):
         self.ln_f = LayerNorm(config.d_model, config.eps)
         self.lm_head = nn.Linear(config.d_model, config.vocab_size, bias=False)
 
-        # self.apply(self._init_weights)
+        self.apply(self._init_weights)
 
         print(f"Number of parameters: {self.get_num_params()/1e6}M")
 

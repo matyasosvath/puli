@@ -3,12 +3,10 @@ import os
 
 from sentencepiece import SentencePieceProcessor
 
-from . import config
-
 
 class Tokenizer:
 
-    def __init__(self, model_file: str = config.TOKENISER_MODEL_PATH) -> None:
+    def __init__(self, model_file: str) -> None:
 
         assert os.path.isfile(model_file), model_file
 
@@ -17,13 +15,13 @@ class Tokenizer:
 
         print(f"Loaded SentencePiece model from {model_file}")
 
-        self.n_words: int = self.tokenizer.vocab_size()
+        self.vocab_size: int = self.tokenizer.vocab_size()
 
         self.bos_id: int = self.tokenizer.bos_id()
         self.eos_id: int = self.tokenizer.eos_id()
         self.pad_id: int = self.tokenizer.pad_id()
 
-        print(f"Words: {self.n_words} - BOS ID: {self.bos_id} - EOS ID: {self.eos_id}")
+        print(f"Words: {self.vocab_size} - BOS ID: {self.bos_id} - EOS ID: {self.eos_id}")
 
     def encode(self, text: str, bos: bool = True, eos: bool = True) -> List[int]:
 
