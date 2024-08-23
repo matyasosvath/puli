@@ -10,7 +10,7 @@ from .generation import Puli2
 
 
 _ARTIFACTS = {
-    "puli2-gpt": "https://nc.nlp.nytud.hu/s/zKCQSFj8G7fdA7q/download/puli2-gpt.zip"
+    "puli2-gpt": "https://nc.nlp.nytud.hu/s/RBwpYYF6XCNdaWy/download/puli2-gpt.zip"
 }
 
 
@@ -50,7 +50,6 @@ def _download_artifact(
     if os.path.isdir(model_path): print(f"Artifact path for {model_name} already exists! Skipping download.")
     else: _download(artifact_url, model_path)
 
-
     toknizer_dir = model_path
     model_file_path = model_path + "/model.pt"
 
@@ -66,6 +65,7 @@ def _download(url: str, target_dir: str) -> None:
 
     with urllib.request.urlopen(url) as source, open(download_path, "wb") as output:
         with tqdm(
+            desc="Downloading data",
             total=int(source.info().get("Content-Length")),
             ncols=80,
             unit="iB",
@@ -81,7 +81,13 @@ def _download(url: str, target_dir: str) -> None:
                 loop.update(len(buffer))
 
     with zipfile.ZipFile(download_path, "r") as zip_ref:
-        print(f"Unzipping data...")
-        zip_ref.extractall(target_dir)
+
+        zip_info_list = zip_ref.infolist()
+        total_files = len(zip_info_list)
+
+        with tqdm(desc="Unzipping data", total=total_files, unit='file', ncols=80) as progress_bar:
+            for zip_info in zip_info_list:
+                zip_ref.extract(zip_info, target_dir)
+                progress_bar.update(1)
 
     os.remove(download_path)
