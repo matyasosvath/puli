@@ -18,9 +18,7 @@ class Puli2:
         start_time = time.time()
 
         model_args = ModelArgs()
-        tokenizer = None
-        # tokenizer = Tokenizer(tokenizer_path)
-        # model_args.vocab_size = tokenizer.vocab_size
+        tokenizer = Tokenizer(tokenizer_path)
         model = Puli2GPT(model_args)
 
         assert model_path.endswith(".pth") or model_path.endswith(".pt"), "model_path should end with '.pt' or '.pth'"

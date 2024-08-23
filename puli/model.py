@@ -1,4 +1,3 @@
-from pathlib import Path
 from typing import Tuple
 
 import math
@@ -6,14 +5,13 @@ from dataclasses import dataclass
 
 import torch
 from torch import nn
-from torch.nn import functional as F
 
 
 @dataclass
 class ModelArgs:
     batch_size: int = 4
     context_length: int = 1024
-    vocab_size: int = 50_048
+    vocab_size: int = 50048
     betas: Tuple[float, float] = (0.9, 0.98)
     dropout: float = 0.1
     d_model: int = 1024
