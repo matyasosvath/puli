@@ -1,11 +1,15 @@
 from __future__ import annotations
 
 import time
+from logging import getLogger
 import torch
 import torch.nn.functional as F
 
 from .model import Puli2GPT, ModelArgs
 from .tokenizer import Tokenizer
+
+
+logger = getLogger()
 
 
 class Puli2:
@@ -25,8 +29,8 @@ class Puli2:
 
         model.load_state_dict(torch.load(f=model_path, map_location="cpu"))
 
-        print(f"Model created and loaded in {time.time() - start_time:.2f} seconds from {model_path}")
-        print(f"Model has {model.get_num_params()/1e6}M parameters.")
+        logger.info(f"Model created and loaded in {time.time() - start_time:.2f} seconds from {model_path}")
+        logger.info(f"Model has {model.get_num_params()/1e6}M parameters.")
 
         return Puli2(model, tokenizer, model_args)
 
@@ -41,7 +45,7 @@ class Puli2:
         input: torch.Tensor, # (batch_size, tokens)
         max_new_tokens: int,
         temperature: float,
-        top_k: int,
+        top_k: int
     ) -> torch.Tensor:
 
         for _ in range(max_new_tokens):
@@ -66,6 +70,8 @@ class Puli2:
 
              # decoding strategies, multinomial sampling
             idx_next = torch.multinomial(probs, num_samples=1)
+
+            if idx_next == self.tokenizer.eos_id: break
 
             input = torch.cat((input, idx_next), dim=1)
 
