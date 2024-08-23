@@ -29,8 +29,8 @@ class Puli2:
 
         model.load_state_dict(torch.load(f=model_path, map_location="cpu"))
 
-        logger.info(f"Model created and loaded in {time.time() - start_time:.2f} seconds from {model_path}")
-        logger.info(f"Model has {model.get_num_params()/1e6}M parameters.")
+        print(f"Model created and loaded in {time.time() - start_time:.2f} seconds from {model_path}")
+        print(f"Model has {model.get_num_params()/1e6}M parameters.")
 
         return Puli2(model, tokenizer, model_args)
 
