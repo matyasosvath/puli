@@ -18,7 +18,7 @@ def load_model(
     model_name: str,
     artifact_path: Union[str, None] = None,
     device: Optional[Union[str, torch.device]] = None,
-) -> Any:
+) -> Puli2:
 
     model_path, tokenizer_dir = _download_artifact(model_name, artifact_path, device)
 

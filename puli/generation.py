@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import time
 from logging import getLogger
+from typing import List, Optional
 import torch
 import torch.nn.functional as F
 
@@ -42,7 +43,7 @@ class Puli2:
     @torch.no_grad()
     def generate(
         self,
-        input: torch.Tensor, # (batch_size, tokens)
+        inputs: torch.Tensor,
         max_new_tokens: int,
         temperature: float,
         top_k: int
@@ -50,29 +51,49 @@ class Puli2:
 
         for _ in range(max_new_tokens):
 
-            idx_cond = ( # crop sequence len
-                input
-                if input.size(1) <= self.model_args.context_length
-                else input[:, -self.model_args.context_length :]
+            idx_cond = (
+                inputs
+                if inputs.size(1) <= self.model_args.context_length
+                else inputs[:, -self.model_args.context_length :]
             )
 
             logits = self.model.forward(idx_cond)
 
-            # temperature scaling
             logits = logits[:, -1, :] / temperature
 
             if top_k is not None:
                 v, _ = torch.topk(logits, min(top_k, logits.size(-1)))
                 logits[logits < v[:, [-1]]] = -float('Inf')
 
-            # logits to (normalized) probabilities
             probs = F.softmax(logits, dim=-1)
 
-             # decoding strategies, multinomial sampling
             idx_next = torch.multinomial(probs, num_samples=1)
 
-            if idx_next == self.tokenizer.eos_id: break
+            if idx_next == self.tokenizer.eos_id:
+                break
 
-            input = torch.cat((input, idx_next), dim=1)
+            inputs = torch.cat((inputs, idx_next), dim=1)
 
-        return input
+        return inputs
+
+    def text_completion(
+        self,
+        prompt: str,
+        temperature: float = 0.6,
+        top_k: int = 3,
+        max_gen_len: Optional[int] = None,
+    ) -> str:
+
+        if max_gen_len is None:
+            max_gen_len = self.model_args.context_length - 1
+
+        input_tokens = torch.tensor(self.tokenizer.encode(prompt, bos=False, eos=False)).unsqueeze(0)
+
+        generation_tokens = self.generate(
+            inputs=input_tokens,
+            max_new_tokens=max_gen_len,
+            temperature=temperature,
+            top_k=top_k
+        )
+
+        return self.tokenizer.decode(generation_tokens.squeeze(0).tolist())

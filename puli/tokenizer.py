@@ -5,6 +5,7 @@ import time
 from logging import getLogger
 from transformers import AutoTokenizer
 
+os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
 logger = getLogger()
 
