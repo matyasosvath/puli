@@ -1,0 +1,18 @@
+---
+authors:
+  - affiliation: Hungarian Research Centre of Linguistics
+    family-names: Osváth
+    given-names: Mátyás
+cff-version: "0.0.1"
+keywords:
+  - "Transformers"
+  - "Large language model"
+  - "Autoregressive language model"
+  - "Generative Pretrained Transformer"
+license: "MIT Licence"
+message: "If you use this software, please cite it using these metadata."
+repository-code: "https://github.com/matyasosvath/puli"
+title: "PULI: Large Language Modeling in PyTorch"
+version: "0.0.1"
+date-released: 2024-08-31
+...

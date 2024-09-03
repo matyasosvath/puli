@@ -133,20 +133,20 @@ class MultiHeadedAttention(nn.Module):
 
 class Block(nn.Module):
 
-    def __init__(self, config: ModelArgs) -> None:
+    def __init__(self, args: ModelArgs) -> None:
         super().__init__()
 
-        self.ln_1 = LayerNorm(config.d_model, config.eps)
+        self.ln_1 = LayerNorm(args.d_model, args.eps)
         self.attn = MultiHeadedAttention(
-            d_in=config.d_model,
-            d_out=config.d_model,
-            n_heads=config.n_heads,
-            dropout=config.dropout,
-            qkv_bias=config.qkv_bias
+            d_in=args.d_model,
+            d_out=args.d_model,
+            n_heads=args.n_heads,
+            dropout=args.dropout,
+            qkv_bias=args.qkv_bias
             )
 
-        self.ln_2 = LayerNorm(config.d_model, config.eps)
-        self.mlp = MLP(config.d_model, config.dropout)
+        self.ln_2 = LayerNorm(args.d_model, args.eps)
+        self.mlp = MLP(args.d_model, args.dropout)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         x = x + self.attn(self.ln_1(x))
@@ -156,17 +156,17 @@ class Block(nn.Module):
 
 class Puli2GPT(nn.Module):
 
-    def __init__(self, config: ModelArgs) -> None:
+    def __init__(self, args: ModelArgs) -> None:
         super().__init__()
 
-        self.config = config
+        self.args = args
 
-        self.wte = nn.Embedding(config.vocab_size, config.d_model)
-        self.wpe = nn.Embedding(config.context_length, config.d_model)
-        self.drop= nn.Dropout(config.dropout)
-        self.h = nn.ModuleList([Block(config) for _ in range(config.n_layers)])
-        self.ln_f = LayerNorm(config.d_model, config.eps)
-        self.lm_head = nn.Linear(config.d_model, config.vocab_size, bias=False)
+        self.wte = nn.Embedding(args.vocab_size, args.d_model)
+        self.wpe = nn.Embedding(args.context_length, args.d_model)
+        self.drop= nn.Dropout(args.dropout)
+        self.h = nn.ModuleList([Block(args) for _ in range(args.n_layers)])
+        self.ln_f = LayerNorm(args.d_model, args.eps)
+        self.lm_head = nn.Linear(args.d_model, args.vocab_size, bias=False)
 
     def forward(self, idx: torch.Tensor):
 
