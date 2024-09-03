@@ -9,18 +9,13 @@ from torch import nn
 
 @dataclass
 class ModelArgs:
-    batch_size: int = 4
     context_length: int = 1024
     vocab_size: int = 50048
-    betas: Tuple[float, float] = (0.9, 0.98)
     dropout: float = 0.1
     d_model: int = 1024
     eps: float = 1e-05
-    d_ff: int = 2048
-    lr: float = 3e-4
-    lr_warmup: int = 16_000
-    n_heads: int = 4
-    n_layers: int =  24
+    n_heads: int = 16
+    n_layers: int = 24
     qkv_bias: bool = True
 
 
@@ -190,3 +185,4 @@ class Puli2GPT(nn.Module):
 
     def get_num_params(self) -> int:
         return sum(p.numel() for p in self.parameters())
+
