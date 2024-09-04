@@ -6,7 +6,7 @@ from typing import List, Optional
 import torch
 import torch.nn.functional as F
 
-from .model import Puli2GPT, ModelArgs
+from . import models
 from .tokenizer import Tokenizer
 
 
@@ -22,9 +22,9 @@ class Puli2:
 
         start_time = time.time()
 
-        model_args = ModelArgs()
+        model_args = models.ModelArgs()
         tokenizer = Tokenizer(tokenizer_path)
-        model = Puli2GPT(model_args)
+        model = models.Puli2GPT(model_args)
 
         assert model_path.endswith(".pth") or model_path.endswith(".pt"), "model_path should end with '.pt' or '.pth'"
 
@@ -35,7 +35,7 @@ class Puli2:
 
         return Puli2(model, tokenizer, model_args)
 
-    def __init__(self, model: Puli2GPT, tokenizer: Tokenizer, model_args: ModelArgs) -> None:
+    def __init__(self, model: models.Puli2GPT, tokenizer: Tokenizer, model_args: models.ModelArgs) -> None:
         self.model = model
         self.tokenizer = tokenizer
         self.model_args = model_args
