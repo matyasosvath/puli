@@ -20,17 +20,6 @@ class ModelArgs:
     qkv_bias: bool = True
 
 
-class Embeddings(nn.Module):
-    def __init__(self, vocab_size: int, d_model: int) -> None:
-        super().__init__()
-
-        self.embedding = nn.Embedding(vocab_size, d_model)
-        self.d_model = d_model
-
-    def forward(self, x: torch.Tensor):
-        return self.embedding(x) * math.sqrt(self.d_model)
-
-
 class LayerNorm(nn.Module):
     def __init__(self, d_model: int, eps: float) -> None:
         super().__init__()
