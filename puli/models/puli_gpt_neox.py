@@ -95,7 +95,6 @@ class MultiHeadedAttention(nn.Module):
         self.dense = nn.Linear(d_out, d_out)
 
         self.attention_dropout = nn.Dropout(dropout)
-        self.dim = d_out
 
     def forward(self, x: torch.Tensor, freqs_cis: torch.Tensor):
 
@@ -104,7 +103,7 @@ class MultiHeadedAttention(nn.Module):
         # (b, num_tokens, d_model) --> (b, num_tokens, 3 * d_model)
         qkv = self.query_key_value(x)
 
-        q, k, v = torch.split(qkv, self.dim, dim=-1)
+        q, k, v = torch.split(qkv, self.d_out, dim=-1)
 
         q = q.view(batch_size, num_tokens, self.n_heads, self.head_dim)
         k = k.view(batch_size, num_tokens, self.n_heads, self.head_dim)
