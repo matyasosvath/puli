@@ -5,6 +5,7 @@ from dataclasses import dataclass
 
 import torch
 from torch import nn
+from torch import Tensor
 
 
 @dataclass
@@ -17,54 +18,6 @@ class ModelArgs:
     n_heads: int = 32
     n_layers: int = 32
     qkv_bias: bool = True
-
-
-def reshape_for_broadcast(freqs_cis: torch.Tensor, x: torch.Tensor):
-
-    ndim = x.ndim
-
-    assert 0 <= 1 < ndim
-    assert freqs_cis.shape == (x.shape[1], x.shape[-1])
-
-    shape = [d if i == 1 or i == ndim - 1 else 1 for i, d in enumerate(x.shape)]
-
-    return freqs_cis.view(*shape)
-
-
-def apply_rotary_emb(xqkv: torch.Tensor, freqs_cis: torch.Tensor) -> torch.Tensor:
-
-    print(f"xqkv shape: {xqkv.shape}")
-    print(f"freq_cis shape: {freqs_cis.shape}")
-
-    xq, xk, xv = torch.split(xqkv, 1, dim=2)
-
-    print(f"q shape: {xq.shape}")
-    print(f"k shape: {xk.shape}")
-    print(f"v shape: {xv.shape}")
-
-    xq_ = torch.view_as_complex(xq.float().reshape(*xq.shape[:-1], -1, 2))
-    xk_ = torch.view_as_complex(xk.float().reshape(*xk.shape[:-1], -1, 2))
-
-    freqs_cis = reshape_for_broadcast(freqs_cis, xq_)
-
-    xq_out = torch.view_as_real(xq_ * freqs_cis).flatten(3)
-    xk_out = torch.view_as_real(xk_ * freqs_cis).flatten(3)
-
-    xqkv = torch.stack([xq_out.type_as(xq), xk_out.type_as(xk), xv], dim=2)
-
-    return xqkv
-
-def precompute_freqs_cis(dim: int, end: int, theta: float = 10000.0):
-
-    freqs = 1.0 / (theta ** (torch.arange(0, dim, 2)[: (dim // 2)].float() / dim))
-
-    t = torch.arange(end, device=freqs.device)  # type: ignore
-
-    freqs = torch.outer(t, freqs).float()  # type: ignore
-
-    freqs_cis = torch.polar(torch.ones_like(freqs), freqs)  # complex64
-
-    return freqs_cis
 
 
 class Embeddings(nn.Module):
@@ -142,7 +95,7 @@ class MultiHeadedAttention(nn.Module):
         self.dense = nn.Linear(d_out, d_out)
 
         self.attention_dropout = nn.Dropout(dropout)
-        self.dropout = dropout
+        self.dim = d_out
 
     def forward(self, x: torch.Tensor, freqs_cis: torch.Tensor):
 
@@ -151,20 +104,17 @@ class MultiHeadedAttention(nn.Module):
         # (b, num_tokens, d_model) --> (b, num_tokens, 3 * d_model)
         qkv = self.query_key_value(x)
 
-        # (b, num_tokens, 3 * d_model) --> (b, num_tokens, 3, n_heads, head_dim)
-        qkv = qkv.view(batch_size, num_tokens, 3, self.n_heads, self.head_dim)
+        q, k, v = torch.split(qkv, self.dim, dim=-1)
 
-        qkv = apply_rotary_emb(qkv, freqs_cis)
+        q = q.view(batch_size, num_tokens, self.n_heads, self.head_dim)
+        k = k.view(batch_size, num_tokens, self.n_heads, self.head_dim)
+        v = v.view(batch_size, num_tokens, self.n_heads, self.head_dim)
 
-        # (b, num_tokens, 3, n_heads, head_dim) --> (3, b, n_heads, num_tokens, head_dim)
-        qkv = qkv.permute(2, 0, 3, 1, 4)
+        q = apply_rotary_emb(q, freqs_cis)
+        k = apply_rotary_emb(k, freqs_cis)
 
-        # (3, b, n_heads, num_tokens, head_dim) -> 3 times (b, n_heads, num_tokens, head_dim)
-        queries, keys, values = qkv
-
-        use_dropout = 0.0 if not self.training else self.dropout
         context_vec = nn.functional.scaled_dot_product_attention(
-            queries, keys, values, attn_mask=None, dropout_p=use_dropout, is_causal=True
+            q, k, v, attn_mask=None, dropout_p=0.0, is_causal=True
         )
 
         # combine heads, where self.d_out = self.n_heads * self.head_dim
@@ -177,6 +127,30 @@ class MultiHeadedAttention(nn.Module):
         context_vec = self.dense(context_vec)
 
         return context_vec
+
+
+def apply_rotary_emb(x: Tensor, freqs_cis: Tensor) -> Tensor:
+    xshaped = x.float().reshape(*x.shape[:-1], -1, 2)
+    freqs_cis = freqs_cis.view(1, xshaped.size(1), 1, xshaped.size(3), 2)
+    x_out2 = torch.stack(
+        [
+            xshaped[..., 0] * freqs_cis[..., 0] - xshaped[..., 1] * freqs_cis[..., 1],
+            xshaped[..., 1] * freqs_cis[..., 0] + xshaped[..., 0] * freqs_cis[..., 1],
+        ],
+        -1,
+    )
+
+    x_out2 = x_out2.flatten(3)
+    return x_out2.type_as(x)
+
+
+def precompute_freqs_cis(dim: int, seq_len: int, theta: float = 10000.0, dtype: torch.dtype = torch.float32):
+    freqs = 1.0 / (theta ** (torch.arange(0, dim, 2)[: (dim // 2)].float() / dim))
+    t = torch.arange(seq_len, device=freqs.device)
+    freqs = torch.outer(t, freqs).float()
+    freqs_cis = torch.polar(torch.ones_like(freqs), freqs)  # complex64
+    cache = torch.stack([freqs_cis.real, freqs_cis.imag], dim=-1)
+    return cache.to(dtype=dtype)
 
 
 class Block(nn.Module):
@@ -225,7 +199,6 @@ class Puli3GptNeox(nn.Module):
 
     def forward(self, idx: torch.Tensor):
         x = self.embed_in(idx)
-        self.freqs_cis = self.freqs_cis.to(x.device)
         x = self.embed_dropout(x)
         for layer in self.layers:
             x = layer(x, self.freqs_cis)
@@ -241,16 +214,14 @@ class Puli3GptNeox(nn.Module):
 
 if __name__ == "__main__":
 
-    x = torch.tensor([1,2,3,4])
-    print(x)
-    x = x.unsqueeze(0)
-    print(x)
+    x = torch.randint(0, 2048, (1,2048))
+    print(x.shape)
 
     args = ModelArgs()
     model = Puli3GptNeox(args)
 
     print(model)
-    print("number of parameters: %.2fB" % (model.get_num_params()/1e9,))
+    # print("number of parameters: %.2fB" % (model.get_num_params()/1e9,))
 
     out = model(x)
     print(out)
