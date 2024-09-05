@@ -8,7 +8,7 @@ PULI models - including variations such as PULI GPT-3SX, PULI GPT-2, and PULI BE
 
 ## License
 
-This project (not the models!) is licensed under the MIT License. For more information, please contant linginst@nytud.hun-ren.hu.
+This project (not the models!) is licensed under the MIT License. For more information, please contant osvath.matyas@nytud.hun-ren.hu.
 
 ## Contributing
 
