@@ -6,25 +6,25 @@ from logging import getLogger
 import torch
 import torch.nn.functional as F
 
-from puli.models.puli2_gpt import ModelArgs, Puli2GPT
+from puli.models import puli2_gpt, puli3_gpt_neox
 from puli.tokenizer import Tokenizer
 
 
 logger = getLogger()
 
 
-class Puli2:
+class Puli:
 
     @staticmethod
-    def build(model_path: str, tokenizer_path: str, seed: int = 42) -> Puli2:
+    def build(model_name: str, model_path: str, tokenizer_path: str, seed: int = 42) -> Puli:
 
         torch.manual_seed(seed)
 
         start_time = time.time()
 
-        model_args = ModelArgs()
         tokenizer = Tokenizer(tokenizer_path)
-        model = Puli2GPT(model_args)
+
+        model, model_args = Puli.initialize_model(model_name)
 
         assert model_path.endswith(".pth") or model_path.endswith(".pt"), "model_path should end with '.pt' or '.pth'"
 
@@ -33,9 +33,20 @@ class Puli2:
         print(f"Model created and loaded in {time.time() - start_time:.2f} seconds from {model_path}")
         print(f"Model has {model.get_num_params()/1e6}M parameters.")
 
-        return Puli2(model, tokenizer, model_args)
+        return Puli(model, tokenizer, model_args)
 
-    def __init__(self, model: Puli2GPT, tokenizer: Tokenizer, model_args: ModelArgs) -> None:
+    @staticmethod
+    def initialize_model(model_name: str):
+        if model_name == "puli2-gpt":
+            model_args = puli2_gpt.ModelArgs()
+            return puli2_gpt.Puli2GPT(model_args), model_args
+        elif model_name == "puli3-gpt-neox":
+            model_args = puli3_gpt_neox.ModelArgs()
+            return puli3_gpt_neox.Puli3GptNeox(model_args), model_args
+        else:
+            raise ValueError(f"Model unrecognised! Got {model_name}.")
+
+    def __init__(self, model, tokenizer, model_args) -> None:
         self.model = model
         self.tokenizer = tokenizer
         self.model_args = model_args

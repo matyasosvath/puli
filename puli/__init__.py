@@ -6,11 +6,12 @@ import zipfile
 import urllib.request
 from tqdm import tqdm
 
-from .generation import Puli2
+from .generation import Puli
 
 
 _ARTIFACTS = {
-    "puli2-gpt": "https://nc.nlp.nytud.hu/s/RBwpYYF6XCNdaWy/download/puli2-gpt.zip"
+    "puli2-gpt": "https://nc.nlp.nytud.hu/s/RBwpYYF6XCNdaWy/download/puli2-gpt.zip",
+    "puli3-gpt-neox": "TODO"
 }
 
 
@@ -18,11 +19,11 @@ def load_model(
     model_name: str,
     artifact_path: Union[str, None] = None,
     device: Optional[Union[str, torch.device]] = None,
-) -> Puli2:
+) -> Puli:
 
     model_path, tokenizer_dir = _download_artifact(model_name, artifact_path, device)
 
-    puli = Puli2.build(model_path, tokenizer_dir)
+    puli = Puli.build(model_name, model_path, tokenizer_dir)
 
     puli.model.to(device)
 
