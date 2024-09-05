@@ -1,13 +1,13 @@
 from __future__ import annotations
+from typing import Optional
 
 import time
 from logging import getLogger
-from typing import List, Optional
 import torch
 import torch.nn.functional as F
 
-from .model import Puli2GPT, ModelArgs
-from .tokenizer import Tokenizer
+from puli.models.puli2_gpt import ModelArgs, Puli2GPT
+from puli.tokenizer import Tokenizer
 
 
 logger = getLogger()
