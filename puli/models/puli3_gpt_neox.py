@@ -197,20 +197,3 @@ class Puli3GptNeox(nn.Module):
 
     def get_num_params(self) -> int:
         return sum(p.numel() for p in self.parameters())
-
-
-
-
-if __name__ == "__main__":
-
-    x = torch.randint(0, 2048, (1,2048))
-    print(x.shape)
-
-    args = ModelArgs()
-    model = Puli3GptNeox(args)
-
-    print(model)
-    # print("number of parameters: %.2fB" % (model.get_num_params()/1e9,))
-
-    out = model(x)
-    print(out)
