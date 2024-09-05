@@ -2,15 +2,11 @@ from __future__ import annotations
 from typing import Optional
 
 import time
-from logging import getLogger
 import torch
 import torch.nn.functional as F
 
 from puli.models import puli2_gpt, puli3_gpt_neox
 from puli.tokenizer import Tokenizer
-
-
-logger = getLogger()
 
 
 class Puli:
