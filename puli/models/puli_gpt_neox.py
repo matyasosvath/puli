@@ -10,7 +10,7 @@ from torch import Tensor
 
 @dataclass
 class ModelArgs:
-    context_length: int = 2048
+    context_length: int = 2048 # block size, seq length
     vocab_size: int = 50048
     dropout: float = 0.0
     d_model: int = 4096
@@ -18,6 +18,7 @@ class ModelArgs:
     n_heads: int = 32
     n_layers: int = 32
     qkv_bias: bool = True
+    rope_base: float = 100_000
 
 
 class LayerNorm(nn.Module):
@@ -87,16 +88,16 @@ class MultiHeadedAttention(nn.Module):
 
     def forward(self, x: torch.Tensor, freqs_cis: torch.Tensor):
 
-        batch_size, num_tokens, d_model = x.shape
+        batch_size, seq_length, d_model = x.shape
 
-        # (b, num_tokens, d_model) --> (b, num_tokens, 3 * d_model)
+        # (b, seq_length, d_model) --> (b, seq_length, 3 * d_model)
         qkv = self.query_key_value(x)
 
         q, k, v = torch.split(qkv, self.d_out, dim=-1)
 
-        q = q.view(batch_size, num_tokens, self.n_heads, self.head_dim)
-        k = k.view(batch_size, num_tokens, self.n_heads, self.head_dim)
-        v = v.view(batch_size, num_tokens, self.n_heads, self.head_dim)
+        q = q.view(batch_size, seq_length, self.n_heads, self.head_dim)
+        k = k.view(batch_size, seq_length, self.n_heads, self.head_dim)
+        v = v.view(batch_size, seq_length, self.n_heads, self.head_dim)
 
         q = apply_rotary_emb(q, freqs_cis)
         k = apply_rotary_emb(k, freqs_cis)
@@ -109,7 +110,7 @@ class MultiHeadedAttention(nn.Module):
         context_vec = (
             context_vec.transpose(1, 2)
             .contiguous()
-            .view(batch_size, num_tokens, self.d_out)
+            .view(batch_size, seq_length, self.d_out)
         )
 
         context_vec = self.dense(context_vec)
@@ -127,7 +128,6 @@ def apply_rotary_emb(x: Tensor, freqs_cis: Tensor) -> Tensor:
         ],
         -1,
     )
-
     x_out2 = x_out2.flatten(3)
     return x_out2.type_as(x)
 
@@ -182,7 +182,8 @@ class Puli3GptNeox(nn.Module):
 
         self.freqs_cis = precompute_freqs_cis(
             self.args.d_model // self.args.n_heads,
-            self.args.context_length
+            self.args.context_length,
+            self.args.rope_base
         )
 
     def forward(self, idx: torch.Tensor):
