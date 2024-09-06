@@ -11,7 +11,7 @@ from torch import Tensor
 class ModelArgs:
     batch_size: int = 32
     context_length: int = 2048 # block size, seq length
-    vocab_size: int = 50048
+    vocab_size: int = 150_016
     dropout: float = 0.0
     d_model: int = 4096
     eps: float = 1e-05
@@ -99,7 +99,7 @@ class MultiHeadedAttention(nn.Module):
 
         self.attention_dropout = nn.Dropout(args.dropout)
 
-        self.kv_cache = KVCache(1, args.context_length, args.n_heads, self.head_dim)
+        self.kv_cache: Optional[KVCache] = None
 
     def forward(self, x: Tensor, freqs_cis: Tensor, input_pos: Tensor):
 
@@ -118,16 +118,17 @@ class MultiHeadedAttention(nn.Module):
         k = apply_rotary_emb(k, freqs_cis)
 
         # q, k, v = map(lambda x: x.transpose(1, 2), (q, k, v))
-        k, v = self.kv_cache.update(input_pos, k,v)
+        if self.kv_cache is not None:
+            k, v = self.kv_cache.update(input_pos, k,v)
 
         context_vec = nn.functional.scaled_dot_product_attention(
             q, k, v, attn_mask=None, dropout_p=0.0, is_causal=True
         )
 
-        print(f"q: {q.shape}")
-        print(f"k: {k.shape}")
-        print(f"v: {v.shape}")
-        print(f"context_vec.shape: {context_vec.shape}")
+        # print(f"q: {q.shape}")
+        # print(f"k: {k.shape}")
+        # print(f"v: {v.shape}")
+        # print(f"context_vec.shape: {context_vec.shape}")
 
         # combine heads, where self.d_model = self.n_heads * self.head_dim
         context_vec = (
@@ -197,11 +198,7 @@ class Puli3GptNeox(nn.Module):
         self.final_layer_norm = LayerNorm(args.d_model, args.eps)
         self.embed_out = nn.Linear(args.d_model, args.vocab_size, bias=False)
 
-        self.freqs_cis = precompute_freqs_cis(
-            self.args.d_model // self.args.n_heads,
-            self.args.context_length,
-            self.args.rope_base
-        )
+        self.freqs_cis: Optional[Tensor] = None
 
     def forward(self, idx: Tensor, input_pos: Optional[Tensor] = None):
         x = self.embed_in(idx)
@@ -214,3 +211,17 @@ class Puli3GptNeox(nn.Module):
 
     def get_num_params(self) -> int:
         return sum(p.numel() for p in self.parameters())
+
+    def setup_caches(self, args: ModelArgs, batch_size: Optional[int] = None) -> None:
+
+        if not batch_size or batch_size > args.batch_size:
+            batch_size = args.batch_size
+
+        for layer in self.layers:
+            layer.attention.kv_cache = KVCache(batch_size, args.context_length, args.n_heads, self.head_dim)
+
+        self.freqs_cis = precompute_freqs_cis(
+            self.args.d_model // self.args.n_heads,
+            self.args.context_length,
+            self.args.rope_base
+        )
