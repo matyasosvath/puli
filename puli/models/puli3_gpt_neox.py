@@ -1,3 +1,5 @@
+from typing import Optional, Tuple
+
 from dataclasses import dataclass
 
 import torch
@@ -7,8 +9,9 @@ from torch import Tensor
 
 @dataclass
 class ModelArgs:
+    batch_size: int = 32
     context_length: int = 2048 # block size, seq length
-    vocab_size: int = 50048
+    vocab_size: int = 150_016
     dropout: float = 0.0
     d_model: int = 4096
     eps: float = 1e-05
@@ -60,37 +63,52 @@ class MLP(nn.Module):
         return x
 
 
-class MultiHeadedAttention(nn.Module):
-    def __init__(
-        self,
-        d_in: int,
-        d_out: int,
-        n_heads: int,
-        dropout: float = 0.0,
-        qkv_bias: bool = True,
-    ) -> None:
-
+class KVCache(nn.Module):
+    def __init__(self, batch_size: int, max_seq_length: int, n_heads: int, head_dim: int, dtype: torch.dtype):
         super().__init__()
 
-        assert d_out % n_heads == 0, "d_model is indivisible by n_heads"
+        cache_shape = (batch_size, max_seq_length, n_heads, head_dim)
+        self.register_buffer('k_cache', torch.zeros(cache_shape, dtype=dtype))
+        self.register_buffer('v_cache', torch.zeros(cache_shape, dtype=dtype))
 
-        self.n_heads = n_heads
-        self.head_dim = d_out // n_heads
-        self.d_out = d_out
+    def update(self, input_pos: Tensor, k_val: Tensor, v_val: Tensor) -> Tuple[Tensor, Tensor]:
 
-        self.query_key_value = nn.Linear(d_in, 3 * d_out, bias=qkv_bias)
-        self.dense = nn.Linear(d_out, d_out)
+        # input_pos: (seq_length), k_val: (batch_size, seq_length, n_heads, head_dim)
+        assert input_pos.shape[0] == k_val.shape[1]
 
-        self.attention_dropout = nn.Dropout(dropout)
+        k_out = self.k_cache
+        v_out = self.v_cache
+        k_out[:, input_pos, :, :] = k_val
+        v_out[:, input_pos, :, :] = v_val
 
-    def forward(self, x: torch.Tensor, freqs_cis: torch.Tensor):
+        return k_out, v_out
+
+
+class MultiHeadedAttention(nn.Module):
+    def __init__(self, args: ModelArgs) -> None:
+        super().__init__()
+
+        assert args.d_model % args.n_heads == 0, "d_model is indivisible by n_heads"
+
+        self.n_heads = args.n_heads
+        self.head_dim = args.d_model // args.n_heads
+        self.d_model = args.d_model
+
+        self.query_key_value = nn.Linear(args.d_model, 3 * args.d_model, bias=args.qkv_bias)
+        self.dense = nn.Linear(args.d_model, args.d_model)
+
+        self.attention_dropout = nn.Dropout(args.dropout)
+
+        self.kv_cache: Optional[KVCache] = None
+
+    def forward(self, x: Tensor, freqs_cis: Tensor, input_pos: Tensor):
 
         batch_size, seq_length, d_model = x.shape
 
-        # (b, seq_length, d_model) --> (b, seq_length, 3 * d_model)
+        # (batch_size, seq_length, d_model) --> (batch_size, seq_length, 3 * d_model)
         qkv = self.query_key_value(x)
 
-        q, k, v = torch.split(qkv, self.d_out, dim=-1)
+        q, k, v = torch.split(qkv, self.d_model, dim=-1)
 
         q = q.view(batch_size, seq_length, self.n_heads, self.head_dim)
         k = k.view(batch_size, seq_length, self.n_heads, self.head_dim)
@@ -99,15 +117,18 @@ class MultiHeadedAttention(nn.Module):
         q = apply_rotary_emb(q, freqs_cis)
         k = apply_rotary_emb(k, freqs_cis)
 
+        if self.kv_cache is not None:
+            k, v = self.kv_cache.update(input_pos, k,v)
+
         context_vec = nn.functional.scaled_dot_product_attention(
             q, k, v, attn_mask=None, dropout_p=0.0, is_causal=True
         )
 
-        # combine heads, where self.d_out = self.n_heads * self.head_dim
+        # combine heads, where self.d_model = self.n_heads * self.head_dim
         context_vec = (
             context_vec.transpose(1, 2)
             .contiguous()
-            .view(batch_size, seq_length, self.d_out)
+            .view(batch_size, seq_length, self.d_model)
         )
 
         context_vec = self.dense(context_vec)
@@ -148,18 +169,12 @@ class Block(nn.Module):
         self.post_attention_dropout = nn.Dropout(args.dropout, inplace=False)
         self.post_mlp_dropout = nn.Dropout(args.dropout, inplace=False)
 
-        self.attention = MultiHeadedAttention(
-            d_in=args.d_model,
-            d_out=args.d_model,
-            n_heads=args.n_heads,
-            dropout=args.dropout,
-            qkv_bias=args.qkv_bias
-            )
+        self.attention = MultiHeadedAttention(args=args)
 
         self.mlp = MLP(args.d_model)
 
-    def forward(self, x: torch.Tensor, freqs_cis: torch.Tensor) -> torch.Tensor:
-        x = x + self.post_attention_dropout(self.attention(self.input_layernorm(x), freqs_cis))
+    def forward(self, x: Tensor, freqs_cis: Tensor, input_pos: Tensor) -> Tensor:
+        x = x + self.post_attention_dropout(self.attention(self.input_layernorm(x), freqs_cis, input_pos))
         x = x + self.post_mlp_dropout(self.mlp(self.post_attention_layernorm(x)))
         return x
 
@@ -177,20 +192,37 @@ class Puli3GptNeox(nn.Module):
         self.final_layer_norm = LayerNorm(args.d_model, args.eps)
         self.embed_out = nn.Linear(args.d_model, args.vocab_size, bias=False)
 
-        self.freqs_cis = precompute_freqs_cis(
-            self.args.d_model // self.args.n_heads,
-            self.args.context_length,
-            self.args.rope_base
-        )
-
-    def forward(self, idx: torch.Tensor):
+    def forward(self, idx: Tensor, input_pos: Optional[Tensor] = None):
         x = self.embed_in(idx)
         x = self.embed_dropout(x)
         for layer in self.layers:
-            x = layer(x, self.freqs_cis)
+            x = layer(x, self.freqs_cis, input_pos)
         x = self.final_layer_norm(x)
         logits = self.embed_out(x)
         return logits
 
     def get_num_params(self) -> int:
         return sum(p.numel() for p in self.parameters())
+
+    def setup_caches(self, batch_size: Optional[int] = None, device: Optional[torch.device] = None) -> None:
+
+        dtype = self.embed_out.weight.dtype
+
+        if not batch_size or batch_size > self.args.batch_size:
+            batch_size = self.args.batch_size
+
+        if not device:
+            device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+
+        for layer in self.layers:
+            layer.attention.kv_cache = KVCache(
+                batch_size, self.args.context_length, self.args.n_heads,
+                self.args.d_model // self.args.n_heads, dtype
+            ).to(device)
+
+        self.freqs_cis = precompute_freqs_cis(
+            self.args.d_model // self.args.n_heads,
+            self.args.context_length,
+            self.args.rope_base,
+            dtype
+        ).to(device)
