@@ -1,9 +1,9 @@
 from __future__ import annotations
-from typing import Optional
+
+from typing import Callable
 
 import time
 import torch
-import torch.nn.functional as F
 
 from puli.models import puli2_gpt, puli3_gpt_neox
 from puli.tokenizer import Tokenizer
@@ -47,17 +47,44 @@ class Puli:
         self.tokenizer = tokenizer
         self.model_args = model_args
 
+    def text_completion(
+        self,
+        prompt: str,
+        strategy: str,
+        temperature: float = 0.6,
+        max_new_tokens: int = 20,
+        **decode_kwargs
+    ) -> str:
+
+        max_new_tokens = (
+            self.model_args.context_length - 1
+            if max_new_tokens > self.model_args.context_length
+            else max_new_tokens
+        )
+
+        input_tokens = torch.tensor(self.tokenizer.encode(prompt, bos=False, eos=False)).unsqueeze(0)
+
+        generation_tokens = self.generate(
+            input_tokens, max_new_tokens, temperature, strategy, **decode_kwargs
+        )
+
+        return self.tokenizer.decode(generation_tokens.squeeze(0).tolist())
+
     @torch.no_grad()
     def generate(
         self,
-        inputs: torch.Tensor,
+        inputs: torch.Tensor, # (batch_size, num_tokens)
         max_new_tokens: int,
         temperature: float,
-        top_k: int
+        strategy: str,
+        **decode_kwargs
     ) -> torch.Tensor:
+
+        decode_strategy = self.get_generation_strategy(strategy)
 
         for _ in range(max_new_tokens):
 
+            # crop current context
             idx_cond = (
                 inputs
                 if inputs.size(1) <= self.model_args.context_length
@@ -66,41 +93,95 @@ class Puli:
 
             logits = self.model.forward(idx_cond)
 
+            # last time step, (batch, n_token, vocab_size) -> (batch, vocab_size), temperature scaling
             logits = logits[:, -1, :] / temperature
 
-            if top_k is not None:
-                v, _ = torch.topk(logits, min(top_k, logits.size(-1)))
-                logits[logits < v[:, [-1]]] = -float('Inf')
+            idx_next = decode_strategy(logits, **decode_kwargs)
 
-            probs = F.softmax(logits, dim=-1)
-
-            idx_next = torch.multinomial(probs, num_samples=1)
-
-            if idx_next == self.tokenizer.eos_id:
-                break
+            # stop at end-of-sequence token
+            if idx_next == self.tokenizer.eos_id: break
 
             inputs = torch.cat((inputs, idx_next), dim=1)
 
         return inputs
 
-    def text_completion(
-        self,
-        prompt: str,
-        temperature: float = 0.6,
-        top_k: int = 3,
-        max_gen_len: Optional[int] = None,
-    ) -> str:
+    def get_generation_strategy(self, strategy: str) -> Callable[..., torch.Tensor]:
 
-        if max_gen_len is None:
-            max_gen_len = self.model_args.context_length - 1
+        strategies = {
+            "greedy_decode": self.greedy_decode,
+            "multinomial_sampling": self.multinomial_sampling,
+            "top_k_sampling": self.top_k_sampling,
+            "top_p_sampling": self.top_p_sampling,
+            "beam_decode": None
+        }
 
-        input_tokens = torch.tensor(self.tokenizer.encode(prompt, bos=False, eos=False)).unsqueeze(0)
+        if strategy not in strategies:
+            raise ValueError(
+                f"Strategy {strategy} is not implemented or does not exist! Availables strategies: {strategies}."
+            )
 
-        generation_tokens = self.generate(
-            inputs=input_tokens,
-            max_new_tokens=max_gen_len,
-            temperature=temperature,
-            top_k=top_k
+        return strategies[strategy]
+
+    def greedy_decode(self, probs: torch.Tensor) -> torch.Tensor:
+
+        # get the idx of the vocab entry with the highest logits value
+        idx_next = torch.argmax(probs, dim=-1, keepdim=True)  # (batch, 1)
+
+        return idx_next
+
+    def multinomial_sampling(self, logits: torch.Tensor) -> torch.Tensor:
+
+        # probability of each token in vocabulary
+        probs = torch.softmax(logits, dim=-1)
+
+        # get the idx of the vocab entry by multinomial sampling
+        idx_next = torch.multinomial(probs, num_samples=1)
+
+        return idx_next
+
+    def top_k_sampling(self, logits: torch.Tensor, top_k: int = 3) -> torch.Tensor:
+
+        top_logits, top_pos = torch.topk(logits, top_k)
+
+        # select top k possible tokens, assign -inf to all others in batch
+        logits = torch.where(
+            condition=logits < top_logits[:, -1],
+            input=torch.tensor(float('-inf')),
+            other=logits
         )
 
-        return self.tokenizer.decode(generation_tokens.squeeze(0).tolist())
+        # probability of each token in vocabulary
+        probs = torch.softmax(logits, dim=-1)
+
+        # get the idx of the vocab entry by multinomial sampling
+        idx_next = torch.multinomial(probs, num_samples=1)
+
+        return idx_next
+
+    def top_p_sampling(self, logits: torch.Tensor, top_p: float = 0.9) -> torch.Tensor:
+
+        assert 0.0 < top_p < 1.0, "top_p must be between 0 and 1."
+
+        # probability of each token in vocabulary
+        probs = torch.softmax(logits, dim=-1)
+
+        # sort probabilities in descending order
+        probs_sort, probs_idx = torch.sort(probs, dim=-1, descending=True)
+
+        # create cumulative sum of elements
+        probs_sum = torch.cumsum(probs_sort, dim=-1)
+
+        # mark tokens having values over top_p
+        mask = probs_sum - probs_sort > top_p
+        probs_sort[mask] = 0.0
+
+        # renormalize remaining probabilities
+        probs_sort.div_(probs_sort.sum(dim=-1, keepdim=True))
+
+        # get the idx of the probabilites by multinomial sampling
+        idx_next = torch.multinomial(probs_sort, num_samples=1)
+
+        # get original index
+        idx_next = torch.gather(probs_idx, -1, idx_next)
+
+        return idx_next
