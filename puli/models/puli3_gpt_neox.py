@@ -67,19 +67,19 @@ class KVCache(nn.Module):
     def __init__(self, batch_size: int, max_seq_length: int, n_heads: int, head_dim: int, dtype: torch.dtype):
         super().__init__()
 
-        cache_shape = (batch_size, max_seq_length, n_heads, head_dim)
+        cache_shape = (batch_size, n_heads, max_seq_length, head_dim)
         self.register_buffer('k_cache', torch.zeros(cache_shape, dtype=dtype))
         self.register_buffer('v_cache', torch.zeros(cache_shape, dtype=dtype))
 
     def update(self, input_pos: Tensor, k_val: Tensor, v_val: Tensor) -> Tuple[Tensor, Tensor]:
 
-        # input_pos: (seq_length), k_val: (batch_size, seq_length, n_heads, head_dim)
-        assert input_pos.shape[0] == k_val.shape[1]
+        # input_pos: (seq_length), k_val: (batch_size, n_heads, seq_length, head_dim)
+        assert input_pos.shape[0] == k_val.shape[2]
 
         k_out = self.k_cache
         v_out = self.v_cache
-        k_out[:, input_pos, :, :] = k_val
-        v_out[:, input_pos, :, :] = v_val
+        k_out[:, :, input_pos, :] = k_val
+        v_out[:, :, input_pos, :] = v_val
 
         return k_out, v_out
 
@@ -101,7 +101,7 @@ class MultiHeadedAttention(nn.Module):
 
         self.kv_cache: Optional[KVCache] = None
 
-    def forward(self, x: Tensor, freqs_cis: Tensor, input_pos: Tensor):
+    def forward(self, x: Tensor, freqs_cis: Tensor, mask: Tensor, input_pos: Tensor):
 
         batch_size, seq_length, d_model = x.shape
 
@@ -117,11 +117,13 @@ class MultiHeadedAttention(nn.Module):
         q = apply_rotary_emb(q, freqs_cis)
         k = apply_rotary_emb(k, freqs_cis)
 
+        q, k, v = map(lambda x: x.transpose(1, 2), (q, k, v))
+
         if self.kv_cache is not None:
             k, v = self.kv_cache.update(input_pos, k,v)
 
         context_vec = nn.functional.scaled_dot_product_attention(
-            q, k, v, attn_mask=None, dropout_p=0.0, is_causal=True
+            q, k, v, attn_mask=mask, dropout_p=0.0, is_causal=False
         )
 
         # combine heads, where self.d_model = self.n_heads * self.head_dim
@@ -173,8 +175,8 @@ class Block(nn.Module):
 
         self.mlp = MLP(args.d_model)
 
-    def forward(self, x: Tensor, freqs_cis: Tensor, input_pos: Tensor) -> Tensor:
-        x = x + self.post_attention_dropout(self.attention(self.input_layernorm(x), freqs_cis, input_pos))
+    def forward(self, x: Tensor, input_pos: Tensor, freqs_cis: Tensor, mask: Tensor) -> Tensor:
+        x = x + self.post_attention_dropout(self.attention(self.input_layernorm(x), freqs_cis, mask, input_pos))
         x = x + self.post_mlp_dropout(self.mlp(self.post_attention_layernorm(x)))
         return x
 
@@ -192,11 +194,20 @@ class Puli3GptNeox(nn.Module):
         self.final_layer_norm = LayerNorm(args.d_model, args.eps)
         self.embed_out = nn.Linear(args.d_model, args.vocab_size, bias=False)
 
+        self.freqs_cis: Optional[Tensor] = None
+        self.mask_cache: Optional[Tensor] = None
+
     def forward(self, idx: Tensor, input_pos: Optional[Tensor] = None):
+
+        assert self.freqs_cis is not None, "Caches must be initialized first!"
+
+        mask = self.causal_mask[None, None, input_pos]
+        freq_cis = self.freqs_cis[input_pos]
+
         x = self.embed_in(idx)
         x = self.embed_dropout(x)
         for layer in self.layers:
-            x = layer(x, self.freqs_cis, input_pos)
+            x = layer(x, input_pos, freq_cis, mask)
         x = self.final_layer_norm(x)
         logits = self.embed_out(x)
         return logits
@@ -221,8 +232,9 @@ class Puli3GptNeox(nn.Module):
             ).to(device)
 
         self.freqs_cis = precompute_freqs_cis(
-            self.args.d_model // self.args.n_heads,
-            self.args.context_length,
-            self.args.rope_base,
-            dtype
+            self.args.d_model // self.args.n_heads, self.args.context_length, self.args.rope_base, dtype
+        ).to(device)
+
+        self.causal_mask = torch.tril(
+            torch.ones(self.args.context_length, self.args.context_length, dtype=torch.bool)
         ).to(device)
