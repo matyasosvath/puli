@@ -162,15 +162,26 @@ class Puli:
 
         assert 0.0 < top_p < 1.0, "top_p must be between 0 and 1."
 
+        # probability of each token in vocabulary
         probs = torch.softmax(logits, dim=-1)
+
+        # sort probabilities in descending order
         probs_sort, probs_idx = torch.sort(probs, dim=-1, descending=True)
+
+        # create cumulative sum of elements
         probs_sum = torch.cumsum(probs_sort, dim=-1)
-        mask = probs_sum - probs_sort > p
+
+        # mark tokens having values over top_p
+        mask = probs_sum - probs_sort > top_p
         probs_sort[mask] = 0.0
+
+        # renormalize remaining probabilities
         probs_sort.div_(probs_sort.sum(dim=-1, keepdim=True))
 
+        # get the idx of the probabilites by multinomial sampling
         idx_next = torch.multinomial(probs_sort, num_samples=1)
 
+        # get original index
         idx_next = torch.gather(probs_idx, -1, idx_next)
 
         return idx_next
