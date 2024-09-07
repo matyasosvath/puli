@@ -64,16 +64,16 @@ class MLP(nn.Module):
 
 
 class KVCache(nn.Module):
-    def __init__(self, batch_size: int, max_seq_length: int, n_heads: int, head_dim: int):
+    def __init__(self, batch_size: int, max_seq_length: int, n_heads: int, head_dim: int, dtype: torch.dtype):
         super().__init__()
 
         cache_shape = (batch_size, max_seq_length, n_heads, head_dim)
-        self.register_buffer('k_cache', torch.zeros(cache_shape))
-        self.register_buffer('v_cache', torch.zeros(cache_shape))
+        self.register_buffer('k_cache', torch.zeros(cache_shape, dtype=dtype))
+        self.register_buffer('v_cache', torch.zeros(cache_shape, dtype=dtype))
 
     def update(self, input_pos: Tensor, k_val: Tensor, v_val: Tensor) -> Tuple[Tensor, Tensor]:
 
-        # input_pos: [S], k_val: [B, S, H, D]
+        # input_pos: (seq_length), k_val: (batch_size, seq_length, n_heads, head_dim)
         assert input_pos.shape[0] == k_val.shape[1]
 
         k_out = self.k_cache
@@ -105,7 +105,7 @@ class MultiHeadedAttention(nn.Module):
 
         batch_size, seq_length, d_model = x.shape
 
-        # (b, seq_length, d_model) --> (b, seq_length, 3 * d_model)
+        # (batch_size, seq_length, d_model) --> (batch_size, seq_length, 3 * d_model)
         qkv = self.query_key_value(x)
 
         q, k, v = torch.split(qkv, self.d_model, dim=-1)
@@ -117,18 +117,12 @@ class MultiHeadedAttention(nn.Module):
         q = apply_rotary_emb(q, freqs_cis)
         k = apply_rotary_emb(k, freqs_cis)
 
-        # q, k, v = map(lambda x: x.transpose(1, 2), (q, k, v))
         if self.kv_cache is not None:
             k, v = self.kv_cache.update(input_pos, k,v)
 
         context_vec = nn.functional.scaled_dot_product_attention(
             q, k, v, attn_mask=None, dropout_p=0.0, is_causal=True
         )
-
-        # print(f"q: {q.shape}")
-        # print(f"k: {k.shape}")
-        # print(f"v: {v.shape}")
-        # print(f"context_vec.shape: {context_vec.shape}")
 
         # combine heads, where self.d_model = self.n_heads * self.head_dim
         context_vec = (
@@ -198,8 +192,6 @@ class Puli3GptNeox(nn.Module):
         self.final_layer_norm = LayerNorm(args.d_model, args.eps)
         self.embed_out = nn.Linear(args.d_model, args.vocab_size, bias=False)
 
-        self.freqs_cis: Optional[Tensor] = None
-
     def forward(self, idx: Tensor, input_pos: Optional[Tensor] = None):
         x = self.embed_in(idx)
         x = self.embed_dropout(x)
@@ -212,16 +204,25 @@ class Puli3GptNeox(nn.Module):
     def get_num_params(self) -> int:
         return sum(p.numel() for p in self.parameters())
 
-    def setup_caches(self, args: ModelArgs, batch_size: Optional[int] = None) -> None:
+    def setup_caches(self, batch_size: Optional[int] = None, device: Optional[torch.device] = None) -> None:
 
-        if not batch_size or batch_size > args.batch_size:
-            batch_size = args.batch_size
+        dtype = self.embed_out.weight.dtype
+
+        if not batch_size or batch_size > self.args.batch_size:
+            batch_size = self.args.batch_size
+
+        if not device:
+            device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
         for layer in self.layers:
-            layer.attention.kv_cache = KVCache(batch_size, args.context_length, args.n_heads, self.head_dim)
+            layer.attention.kv_cache = KVCache(
+                batch_size, self.args.context_length, self.args.n_heads,
+                self.args.d_model // self.args.n_heads, dtype
+            ).to(device)
 
         self.freqs_cis = precompute_freqs_cis(
             self.args.d_model // self.args.n_heads,
             self.args.context_length,
-            self.args.rope_base
-        )
+            self.args.rope_base,
+            dtype
+        ).to(device)
