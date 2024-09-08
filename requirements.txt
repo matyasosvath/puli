@@ -1,4 +1,5 @@
 tqdm
 torch
-sentencepiece
 transformers
+torch_tb_profiler
+tensorboard

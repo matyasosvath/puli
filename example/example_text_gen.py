@@ -1,13 +1,29 @@
+import torch
+
 from puli import load_model
 
-puli = load_model("puli2-gpt")
+
+device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
+
+puli = load_model("puli2-gpt", device)
 
 print(
     puli.text_completion(
-        "Szia, te ki vagy?",
+        "Elmesélek egy történetet a nyelvtechnológiáról.",
         max_new_tokens=10,
+        batch_size=1,
         strategy="top_k_sampling",
         temperature=1.3,
-        top_k=3
+        top_k=3,
+    )
+)
+
+print(
+    puli.text_completion(
+        ["Elmesélek egy történetet a nyelvtechnológiáról.", "A magyar nyelv egy"],
+        max_new_tokens=20,
+        batch_size=2,
+        strategy="multinomial_sampling",
+        temperature=1.3
     )
 )

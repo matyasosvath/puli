@@ -17,13 +17,13 @@ _ARTIFACTS = {
 
 def load_model(
     model_name: str,
-    artifact_path: Union[str, None] = None,
-    device: Optional[Union[str, torch.device]] = None,
+    device: torch.device,
+    artifact_path: Union[str, None] = None
 ) -> Puli:
 
     model_path, tokenizer_dir = _download_artifact(model_name, artifact_path, device)
 
-    puli = Puli.build(model_name, model_path, tokenizer_dir)
+    puli = Puli.build(model_name, model_path, tokenizer_dir, device)
 
     puli.model.to(device)
 
