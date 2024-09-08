@@ -31,7 +31,7 @@ class Tokenizer:
 
     def encode(
         self, text: Union[str, List[str]], bos: bool = True, eos: bool = True
-    ) -> Tuple:
+    ) -> torch.Tensor:
 
         assert isinstance(text, str) or isinstance(text, list), f"Parameter `text` must be string or list. Got {type(text)}"
 
