@@ -172,10 +172,6 @@ class Puli:
 
         top_logits, top_pos = torch.topk(logits, top_k)
 
-        print("hello")
-        print(logits.shape)
-        print(top_logits.shape)
-
         # select top k possible tokens, assign -inf to all others in batch
         logits = torch.where(
             condition=logits < top_logits[:, -1],
