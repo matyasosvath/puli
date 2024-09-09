@@ -1,4 +1,4 @@
-from typing import List, Union
+from typing import List, Tuple, Union
 
 import os
 import time
@@ -29,8 +29,8 @@ class Tokenizer:
         print(f"Vocab size: {self.vocab_size} - BOS ID: {self.bos_id} - EOS ID: {self.eos_id}")
 
     def encode(
-        self, text: Union[str, List[str]], bos: bool = True, eos: bool = True
-    ) -> torch.Tensor:
+        self, text: Union[str, List[str]], device, bos: bool = True, eos: bool = True,
+    ):
 
         assert isinstance(text, str) or isinstance(text, list), f"Parameter `text` must be string or list. Got {type(text)}"
 
@@ -41,8 +41,9 @@ class Tokenizer:
         if bos: tokens = torch.tensor([self.bos_id]) + tokens
         if eos: tokens = tokens + torch.tensor([self.eos_id])
 
-        return tokens
+        attention_mask = (attention_mask == 1)  # Convert integer mask to bool
 
+        return tokens.to(device), attention_mask.to(device)
 
-    def decode(self, tokens: List[int]) -> Union[str, List[str]]:
+    def decode(self, tokens: List[int]) -> str:
         return self.tokenizer.decode(tokens)

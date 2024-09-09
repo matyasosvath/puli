@@ -101,7 +101,7 @@ class MultiHeadedAttention(nn.Module):
 
         self.kv_cache: Optional[KVCache] = None
 
-    def forward(self, x: Tensor, freqs_cis: Tensor, mask: Tensor, input_pos: Tensor):
+    def forward(self, x: Tensor, input_pos: Tensor, freqs_cis: Tensor, casual_mask: Tensor, attn_mask: Optional[Tensor]):
 
         batch_size, seq_length, d_model = x.shape
 
@@ -123,7 +123,7 @@ class MultiHeadedAttention(nn.Module):
             k, v = self.kv_cache.update(input_pos, k,v)
 
         context_vec = nn.functional.scaled_dot_product_attention(
-            q, k, v, attn_mask=mask, dropout_p=0.0, is_causal=False
+            q, k, v, attn_mask=attn_mask, dropout_p=0.0, is_causal=True
         )
 
         # combine heads, where self.d_model = self.n_heads * self.head_dim
@@ -175,8 +175,8 @@ class Block(nn.Module):
 
         self.mlp = MLP(args.d_model)
 
-    def forward(self, x: Tensor, input_pos: Tensor, freqs_cis: Tensor, mask: Tensor) -> Tensor:
-        x = x + self.post_attention_dropout(self.attention(self.input_layernorm(x), freqs_cis, mask, input_pos))
+    def forward(self, x: Tensor, input_pos: Tensor, freqs_cis: Tensor, casual_mask: Tensor, attn_mask: Tensor) -> Tensor:
+        x = x + self.post_attention_dropout(self.attention(self.input_layernorm(x), input_pos, freqs_cis, casual_mask, attn_mask))
         x = x + self.post_mlp_dropout(self.mlp(self.post_attention_layernorm(x)))
         return x
 
@@ -197,17 +197,17 @@ class Puli3GptNeox(nn.Module):
         self.freqs_cis: Optional[Tensor] = None
         self.mask_cache: Optional[Tensor] = None
 
-    def forward(self, idx: Tensor, input_pos: Optional[Tensor] = None):
+    def forward(self, idx: Tensor, input_pos: Optional[Tensor] = None, attn_mask: Optional[Tensor]= None):
 
         assert self.freqs_cis is not None, "Caches must be initialized first!"
 
-        mask = self.causal_mask[None, None, input_pos]
+        casual_mask = self.causal_mask[None, None, input_pos]
         freq_cis = self.freqs_cis[input_pos]
 
         x = self.embed_in(idx)
         x = self.embed_dropout(x)
         for layer in self.layers:
-            x = layer(x, input_pos, freq_cis, mask)
+            x = layer(x, input_pos, freq_cis, casual_mask, attn_mask)
         x = self.final_layer_norm(x)
         logits = self.embed_out(x)
         return logits
@@ -215,19 +215,18 @@ class Puli3GptNeox(nn.Module):
     def get_num_params(self) -> int:
         return sum(p.numel() for p in self.parameters())
 
-    def setup_caches(self, batch_size: Optional[int] = None, device: Optional[torch.device] = None) -> None:
+    def setup_caches(self, batch_size: int, max_seq_len: int, device: torch.device) -> None:
 
         dtype = self.embed_out.weight.dtype
 
-        if not batch_size or batch_size > self.args.batch_size:
+        if batch_size > self.args.batch_size:
             batch_size = self.args.batch_size
 
-        if not device:
-            device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+        max_seq_len = min(max_seq_len, self.args.context_length)
 
         for layer in self.layers:
             layer.attention.kv_cache = KVCache(
-                batch_size, self.args.context_length, self.args.n_heads,
+                batch_size, max_seq_len, self.args.n_heads,
                 self.args.d_model // self.args.n_heads, dtype
             ).to(device)
 
