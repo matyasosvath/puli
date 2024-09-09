@@ -11,7 +11,7 @@ from .generation import Puli
 
 _ARTIFACTS = {
     "puli2-gpt": "https://nc.nlp.nytud.hu/s/RBwpYYF6XCNdaWy/download/puli2-gpt.zip",
-    "puli3-gpt-neox": "TODO"
+    "puli3-gpt-neox": "https://nc.nlp.nytud.hu/s/EeHf6K3j7wYRSq5/download/puli3-gpt-neox.zip"
 }
 
 
