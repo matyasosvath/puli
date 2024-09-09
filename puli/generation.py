@@ -25,7 +25,7 @@ class Puli:
 
         start_time = time.time()
 
-        tokenizer = Tokenizer(tokenizer_path)
+        tokenizer = Tokenizer(tokenizer_path, device)
 
         model, model_args = Puli.initialize_model(model_name)
 
@@ -94,7 +94,7 @@ class Puli:
             else max_new_tokens
         )
 
-        input_tokens, _ = self.tokenizer.encode(prompt, self.device, bos=False, eos=False)
+        input_tokens, _ = self.tokenizer.encode(prompt, bos=False, eos=False)
 
         self.setup(batch_size, input_tokens, max_new_tokens)
 
@@ -111,8 +111,8 @@ class Puli:
     @torch.no_grad()
     def generate(
         self,
-        inputs: torch.Tensor, # (batch_size, num_tokens),
-        attn_mask: Optional[torch.Tensor], # (batch_size, num_tokens),
+        inputs: torch.Tensor, # (batch_size, num_tokens)
+        attn_mask: Optional[torch.Tensor],
         max_new_tokens: int,
         temperature: float,
         strategy: str,

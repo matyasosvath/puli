@@ -8,7 +8,7 @@ from transformers import AutoTokenizer
 
 class Tokenizer:
 
-    def __init__(self, tokenizer_dir: str) -> None:
+    def __init__(self, tokenizer_dir: str, device: torch.device) -> None:
 
         assert os.path.isdir(tokenizer_dir), tokenizer_dir
 
@@ -20,6 +20,7 @@ class Tokenizer:
 
         print(f"Loading tokenizer in {time.time() - start_time:.2f} seconds from {tokenizer_dir}")
 
+        self.device = device
         self.vocab_size: int = len(self.tokenizer.get_vocab())
 
         self.bos_id = self.tokenizer.bos_token_id
@@ -28,8 +29,9 @@ class Tokenizer:
 
         print(f"Vocab size: {self.vocab_size} - BOS ID: {self.bos_id} - EOS ID: {self.eos_id}")
 
+
     def encode(
-        self, text: Union[str, List[str]], device, bos: bool = True, eos: bool = True,
+        self, text: Union[str, List[str]], bos: bool = True, eos: bool = True,
     ):
 
         assert isinstance(text, str) or isinstance(text, list), f"Parameter `text` must be string or list. Got {type(text)}"
@@ -43,7 +45,7 @@ class Tokenizer:
 
         attention_mask = (attention_mask == 1)  # Convert integer mask to bool
 
-        return tokens.to(device), attention_mask.to(device)
+        return tokens.to(self.device), attention_mask.to(self.device)
 
     def decode(self, tokens: List[int]) -> str:
         return self.tokenizer.decode(tokens)
