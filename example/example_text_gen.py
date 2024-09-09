@@ -5,7 +5,7 @@ from puli import load_model
 
 device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
 
-puli = load_model("puli3-gpt-neox", device)
+puli = load_model("puli2-gpt", device)
 
 print(
     puli.text_completion(
@@ -17,13 +17,3 @@ print(
         top_k=3,
     )
 )
-
-# print(
-#     puli.text_completion(
-#         ["Elmesélek egy történetet a nyelvtechnológiáról.", "A magyar nyelv egy"],
-#         max_new_tokens=20,
-#         batch_size=2,
-#         strategy="multinomial_sampling",
-#         temperature=1.3
-#     )
-# )

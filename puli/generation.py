@@ -73,6 +73,7 @@ class Puli:
         self,
         prompt: Union[str, List[str]],
         strategy: str,
+        batch_size: int,
         temperature: float = 0.6,
         max_new_tokens: int = 20,
         profile: bool = False,
