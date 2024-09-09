@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Callable
+from typing import Callable, List, Union
 
 import time
 import torch
@@ -12,9 +12,17 @@ from puli.tokenizer import Tokenizer
 class Puli:
 
     @staticmethod
-    def build(model_name: str, model_path: str, tokenizer_path: str, seed: int = 42) -> Puli:
+    def build(
+        model_name: str,
+        model_path: str,
+        tokenizer_path: str,
+        device: torch.device,
+        profile: bool = False,
+        seed: int = 42,
+    ) -> Puli:
 
         torch.manual_seed(seed)
+        torch.cuda.manual_seed(seed)
 
         start_time = time.time()
 
@@ -24,35 +32,50 @@ class Puli:
 
         assert model_path.endswith(".pth") or model_path.endswith(".pt"), "model_path should end with '.pt' or '.pth'"
 
-        model.load_state_dict(torch.load(f=model_path, map_location="cpu"))
+        model.load_state_dict(torch.load(f=model_path, map_location=device, weights_only=True))
 
         print(f"Model created and loaded in {time.time() - start_time:.2f} seconds from {model_path}")
         print(f"Model has {model.get_num_params()/1e6}M parameters.")
 
-        return Puli(model, tokenizer, model_args)
+        return Puli(model, tokenizer, model_args, device, profile)
 
     @staticmethod
     def initialize_model(model_name: str):
+
         if model_name == "puli2-gpt":
+
             model_args = puli2_gpt.ModelArgs()
             return puli2_gpt.Puli2GPT(model_args), model_args
+
         elif model_name == "puli3-gpt-neox":
+
             model_args = puli3_gpt_neox.ModelArgs()
             return puli3_gpt_neox.Puli3GptNeox(model_args), model_args
+
         else:
             raise ValueError(f"Model unrecognised! Got {model_name}.")
 
-    def __init__(self, model, tokenizer, model_args) -> None:
+    def __init__(self, model, tokenizer, model_args, device: torch.device, use_profile: bool = True) -> None:
+
         self.model = model
         self.tokenizer = tokenizer
         self.model_args = model_args
+        self.device = device
+
+        self.prof = torch.profiler.profile(
+            schedule=torch.profiler.schedule(wait=1, warmup=1, active=3, repeat=1),
+            on_trace_ready=torch.profiler.tensorboard_trace_handler("./log"),
+            record_shapes=True,
+            with_stack=True,
+        ) if use_profile else None
 
     def text_completion(
         self,
-        prompt: str,
+        prompt: Union[str, List[str]],
         strategy: str,
         temperature: float = 0.6,
         max_new_tokens: int = 20,
+        profile: bool = False,
         **decode_kwargs
     ) -> str:
 
@@ -62,11 +85,15 @@ class Puli:
             else max_new_tokens
         )
 
-        input_tokens = torch.tensor(self.tokenizer.encode(prompt, bos=False, eos=False)).unsqueeze(0)
+        input_tokens = self.tokenizer.encode(prompt, bos=False, eos=False).to(self.device)
+
+        if profile and self.prof: self.prof.start()
 
         generation_tokens = self.generate(
             input_tokens, max_new_tokens, temperature, strategy, **decode_kwargs
         )
+
+        if profile and self.prof: self.prof.stop()
 
         return self.tokenizer.decode(generation_tokens.squeeze(0).tolist())
 

@@ -1,13 +1,9 @@
-from typing import List
+from typing import List, Union
 
 import os
 import time
-from logging import getLogger
+import torch
 from transformers import AutoTokenizer
-
-os.environ["TOKENIZERS_PARALLELISM"] = "false"
-
-logger = getLogger()
 
 
 class Tokenizer:
@@ -20,7 +16,9 @@ class Tokenizer:
 
         self.tokenizer = AutoTokenizer.from_pretrained(tokenizer_dir)
 
-        logger.info(f"Loading tokenizer in {time.time() - start_time:.2f} seconds from {tokenizer_dir}")
+        self.tokenizer.add_special_tokens({'pad_token': '[PAD]'})
+
+        print(f"Loading tokenizer in {time.time() - start_time:.2f} seconds from {tokenizer_dir}")
 
         self.vocab_size: int = len(self.tokenizer.get_vocab())
 
@@ -28,18 +26,23 @@ class Tokenizer:
         self.eos_id = self.tokenizer.eos_token_id
         self.pad_id = self.tokenizer.pad_token_id
 
-        logger.info(f"Vocab size: {self.vocab_size} - BOS ID: {self.bos_id} - EOS ID: {self.eos_id}")
+        print(f"Vocab size: {self.vocab_size} - BOS ID: {self.bos_id} - EOS ID: {self.eos_id}")
 
-    def encode(self, text: str, bos: bool = True, eos: bool = True) -> List[int]:
+    def encode(
+        self, text: Union[str, List[str]], bos: bool = True, eos: bool = True
+    ) -> torch.Tensor:
 
-        assert type(text) is str, f"Parameter `text` must be string. Got {type(text)}"
+        assert isinstance(text, str) or isinstance(text, list), f"Parameter `text` must be string or list. Got {type(text)}"
 
-        tokens = self.tokenizer.encode(text)
+        tokens = self.tokenizer(text, return_tensors="pt", padding=True)
 
-        if bos: tokens = [self.bos_id] + tokens
-        if eos: tokens = tokens + [self.eos_id]
+        tokens, attention_mask = tokens["input_ids"], tokens["attention_mask"]
+
+        if bos: tokens = torch.tensor([self.bos_id]) + tokens
+        if eos: tokens = tokens + torch.tensor([self.eos_id])
 
         return tokens
 
-    def decode(self, tokens: List[int]) -> str:
+
+    def decode(self, tokens: List[int]) -> Union[str, List[str]]:
         return self.tokenizer.decode(tokens)
