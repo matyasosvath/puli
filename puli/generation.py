@@ -3,7 +3,6 @@ from __future__ import annotations
 from typing import Callable, List, Union
 
 import time
-from regex import P
 import torch
 
 from puli.models import puli2_gpt, puli3_gpt_neox
@@ -74,7 +73,6 @@ class Puli:
         self,
         prompt: Union[str, List[str]],
         strategy: str,
-        batch_size: int,
         temperature: float = 0.6,
         max_new_tokens: int = 20,
         profile: bool = False,

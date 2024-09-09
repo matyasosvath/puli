@@ -1,4 +1,4 @@
-from typing import List, Tuple, Union
+from typing import List, Union
 
 import os
 import time
@@ -26,8 +26,7 @@ class Tokenizer:
         self.eos_id = self.tokenizer.eos_token_id
         self.pad_id = self.tokenizer.pad_token_id
 
-        print(
-            f"Vocab size: {self.vocab_size} - BOS ID: {self.tokenizer.bos_token_id} - EOS ID: {self.tokenizer.eos_token_id}"        )
+        print(f"Vocab size: {self.vocab_size} - BOS ID: {self.bos_id} - EOS ID: {self.eos_id}")
 
     def encode(
         self, text: Union[str, List[str]], bos: bool = True, eos: bool = True
@@ -45,5 +44,5 @@ class Tokenizer:
         return tokens
 
 
-    def decode(self, tokens: List[int]) -> str:
+    def decode(self, tokens: List[int]) -> Union[str, List[str]]:
         return self.tokenizer.decode(tokens)
