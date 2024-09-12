@@ -10,13 +10,13 @@ from .generation import Puli
 
 
 _MODELS = {
-    "puli2-gpt": "https://nc.nlp.nytud.hu/s/RBwpYYF6XCNdaWy/download/puli2-gpt.zip",
-    "puli3-gpt-neox": "https://nc.nlp.nytud.hu/s/EeHf6K3j7wYRSq5/download/puli3-gpt-neox.zip"
+    "puli2-gpt": "https://nc.nlp.nytud.hu/s/cCqHLJaftNnRmGZ/download/puli2-gpt.pt",
+    "puli3-gpt-neox": ""
 }
 
-_TOKENIZERS = { # TODO will be removed, when creating tokenizer package
-    "puli2-gpt": "TODO",
-    "puli3-gpt-neox": "TODO"
+_TOKENIZERS = {
+    "puli2-gpt": "https://nc.nlp.nytud.hu/s/gtnCjHZ2idBZnfb/download/puli2-gpt-tokenizer.zip",
+    "puli3-gpt-neox": ""
 }
 
 
@@ -61,7 +61,7 @@ def _download_artifact(
         _download(tokenizer_url, artifact_path, unzip=True)
 
     toknizer_dir = artifact_path
-    model_file_path = artifact_path + "/model.pt"
+    model_file_path = artifact_path + f"/{model_name}.pt"
 
     return model_file_path, toknizer_dir
 
