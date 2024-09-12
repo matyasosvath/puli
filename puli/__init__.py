@@ -1,4 +1,4 @@
-from typing import Any, Optional, Tuple, Union
+from typing import Optional, Tuple, Union
 
 import os
 import torch
@@ -9,9 +9,14 @@ from tqdm import tqdm
 from .generation import Puli
 
 
-_ARTIFACTS = {
+_MODELS = {
     "puli2-gpt": "https://nc.nlp.nytud.hu/s/RBwpYYF6XCNdaWy/download/puli2-gpt.zip",
     "puli3-gpt-neox": "https://nc.nlp.nytud.hu/s/EeHf6K3j7wYRSq5/download/puli3-gpt-neox.zip"
+}
+
+_TOKENIZERS = { # TODO will be removed, when creating tokenizer package
+    "puli2-gpt": "TODO",
+    "puli3-gpt-neox": "TODO"
 }
 
 
@@ -32,32 +37,36 @@ def load_model(
 
 def _download_artifact(
     model_name: str,
-    model_path: Union[str, None] = None,
+    artifact_path: Union[str, None] = None,
     device: Optional[Union[str, torch.device]] = None,
 ) -> Tuple[str, str]:
 
-    if model_name not in _ARTIFACTS:
-        raise RuntimeError(f"Model {model_name} not found; available models: {_ARTIFACTS}")
+    if model_name not in _MODELS or model_name not in _TOKENIZERS:
+        raise RuntimeError(f"Model or tokenizer {model_name} not found; available models: {_MODELS}")
 
     if device is None:
         device = "cuda" if torch.cuda.is_available() else "cpu"
 
-    if model_path is None:
+    if artifact_path is None:
         default = os.path.join(os.path.expanduser("~"), ".cache")
-        model_path = os.path.join(os.getenv("XDG_CACHE_HOME", default), f"puli/{model_name}")
+        artifact_path = os.path.join(os.getenv("XDG_CACHE_HOME", default), f"puli/{model_name}")
 
-    artifact_url = _ARTIFACTS[model_name]
+    model_url = _MODELS[model_name]
+    tokenizer_url = _TOKENIZERS[model_name]
 
-    if os.path.isdir(model_path): print(f"Artifact path for {model_name} already exists! Skipping download.")
-    else: _download(artifact_url, model_path)
+    if os.path.isdir(artifact_path):
+        print(f"Model path for {model_name} already exists! Skipping download.")
+    else:
+        _download(model_url, artifact_path)
+        _download(tokenizer_url, artifact_path, unzip=True)
 
-    toknizer_dir = model_path
-    model_file_path = model_path + "/model.pt"
+    toknizer_dir = artifact_path
+    model_file_path = artifact_path + "/model.pt"
 
     return model_file_path, toknizer_dir
 
 
-def _download(url: str, target_dir: str) -> None:
+def _download(url: str, target_dir: str, unzip: bool = False) -> None:
 
     os.makedirs(target_dir, exist_ok=True)
 
@@ -81,6 +90,13 @@ def _download(url: str, target_dir: str) -> None:
                 output.write(buffer)
                 loop.update(len(buffer))
 
+    if unzip:
+        _unzip_file(download_path, target_dir)
+        os.remove(download_path)
+
+
+def _unzip_file(download_path: str, target_dir: str) -> None:
+
     with zipfile.ZipFile(download_path, "r") as zip_ref:
 
         zip_info_list = zip_ref.infolist()
@@ -90,5 +106,3 @@ def _download(url: str, target_dir: str) -> None:
             for zip_info in zip_info_list:
                 zip_ref.extract(zip_info, target_dir)
                 progress_bar.update(1)
-
-    os.remove(download_path)
