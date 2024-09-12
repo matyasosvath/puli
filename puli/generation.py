@@ -1,10 +1,13 @@
 from __future__ import annotations
 
-from typing import Callable, List, Union
+from typing import Callable, List, Optional, Union
 
 import time
+from pathlib import Path
+
 import torch
 
+import utils
 from puli.models import puli2_gpt, puli3_gpt_neox
 from puli.tokenizer import Tokenizer
 
@@ -14,12 +17,13 @@ class Puli:
     @staticmethod
     def build(
         model_name: str,
-        model_path: str,
+        model_path: Path,
         tokenizer_path: str,
         device: torch.device,
         profile: bool = False,
         compile: bool = False,
         seed: int = 42,
+        mode: Optional[str] = None
     ) -> Puli:
 
         torch.manual_seed(seed)
@@ -31,9 +35,10 @@ class Puli:
 
         model, model_args = Puli.initialize_model(model_name)
 
-        assert model_path.endswith(".pth") or model_path.endswith(".pt"), "model_path should end with '.pt' or '.pth'"
-
-        model.load_state_dict(torch.load(f=model_path, map_location=device, weights_only=True))
+        if mode == "int8":
+            model = utils.load_quantized_model(model, model_path, mode, device)
+        else:
+            model = utils.load_model(model, model_path, device)
 
         if compile:
             model = torch.compile(model, mode="reduce-overhead", fullgraph=True)

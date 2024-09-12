@@ -5,6 +5,7 @@ import torch
 import zipfile
 import urllib.request
 from tqdm import tqdm
+from pathlib import Path
 
 from .generation import Puli
 
@@ -23,23 +24,20 @@ _TOKENIZERS = {
 def load_model(
     model_name: str,
     device: torch.device,
-    artifact_path: Union[str, None] = None
+    artifact_path: Union[str, None] = None,
+    mode: Optional[str] = None
 ) -> Puli:
 
     model_path, tokenizer_dir = _download_artifact(model_name, artifact_path, device)
 
-    puli = Puli.build(model_name, model_path, tokenizer_dir, device)
-
-    puli.model.to(device)
-
-    return puli
+    return Puli.build(model_name, model_path, tokenizer_dir, device, mode=mode)
 
 
 def _download_artifact(
     model_name: str,
     artifact_path: Union[str, None] = None,
     device: Optional[Union[str, torch.device]] = None,
-) -> Tuple[str, str]:
+) -> Tuple[Path, str]:
 
     if model_name not in _MODELS or model_name not in _TOKENIZERS:
         raise RuntimeError(f"Model or tokenizer {model_name} not found; available models: {_MODELS}")
@@ -60,10 +58,10 @@ def _download_artifact(
         _download(model_url, artifact_path)
         _download(tokenizer_url, artifact_path, unzip=True)
 
-    toknizer_dir = artifact_path
+    tokenizer_dir = artifact_path
     model_file_path = artifact_path + f"/{model_name}.pt"
 
-    return model_file_path, toknizer_dir
+    return Path(model_file_path), tokenizer_dir
 
 
 def _download(url: str, target_dir: str, unzip: bool = False) -> None:

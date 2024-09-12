@@ -1,3 +1,4 @@
+import os
 import sys
 import thop
 import torch
@@ -60,3 +61,11 @@ def get_model_bandwidth_utilization(
 
     return (params * bytes_per_param * tokens_per_second) / memory_bandwith
 
+
+def print_size_of_model(model):
+
+    torch.save(model.state_dict(), "temp.p")
+
+    print('Size (MB):', os.path.getsize("temp.p")/1e6)
+
+    os.remove('temp.p')
