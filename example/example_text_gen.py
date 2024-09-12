@@ -1,6 +1,8 @@
 import torch
 
+import utils
 from puli import load_model
+import utils.helper
 
 
 device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
@@ -21,4 +23,8 @@ print(
 )
 
 inputs = puli.tokenizer.encode(prompt).to(device)
-print(f"token/sec: {puli.calculate_token_per_second(inputs, 100)}")
+tps = puli.calculate_token_per_second(inputs, 100)
+print(f"token/sec: {tps}")
+
+mbu = utils.helper.get_model_bandwidth_utilization(puli.model, "float32", tps)
+print(f"mbu: {mbu}%")
