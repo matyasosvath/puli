@@ -18,6 +18,7 @@ class Puli:
         tokenizer_path: str,
         device: torch.device,
         profile: bool = False,
+        compile: bool = False,
         seed: int = 42,
     ) -> Puli:
 
@@ -33,6 +34,9 @@ class Puli:
         assert model_path.endswith(".pth") or model_path.endswith(".pt"), "model_path should end with '.pt' or '.pth'"
 
         model.load_state_dict(torch.load(f=model_path, map_location=device, weights_only=True))
+
+        if compile:
+            model = torch.compile(model, mode="reduce-overhead", fullgraph=True)
 
         print(f"Model created and loaded in {time.time() - start_time:.2f} seconds from {model_path}")
         print(f"Model has {model.get_num_params()/1e6}M parameters.")
@@ -213,3 +217,16 @@ class Puli:
         idx_next = torch.gather(probs_idx, -1, idx_next)
 
         return idx_next
+
+    def calculate_token_per_second(self, inputs: torch.Tensor, n: int = 100) -> float:
+
+        start_time = time.time()
+        self.generate(inputs, n, temperature=1.0, strategy="greedy_decode")
+        end_time = time.time()
+
+        total_time = end_time - start_time
+
+        return n / total_time
+
+
+

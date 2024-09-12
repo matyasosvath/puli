@@ -3,3 +3,4 @@ torch
 transformers
 torch_tb_profiler
 tensorboard
+thop
