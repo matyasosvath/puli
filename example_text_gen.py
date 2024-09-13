@@ -7,7 +7,8 @@ import utils.helper
 
 device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
 
-puli = load_model("puli2-gpt", device)
+# puli = load_model("puli2-gpt", device)
+puli = load_model("puli2-gpt", device, mode="int8")
 
 prompt = "Elmesélek egy történetet a nyelvtechnológiáról."
 
