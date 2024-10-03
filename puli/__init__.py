@@ -16,7 +16,8 @@ _MODELS = {
 
 _TOKENIZERS = {
     "puli2-gpt": "https://nc.nlp.nytud.hu/s/gtnCjHZ2idBZnfb/download/puli2-gpt-tokenizer.zip",
-    "puli3-gpt-neox": "https://nc.nlp.nytud.hu/s/gG4Li64eR2c8aN8/download/puli3-gpt-neox-tokenizer.zip"
+    "puli3-gpt-neox": "https://nc.nlp.nytud.hu/s/gG4Li64eR2c8aN8/download/puli3-gpt-neox-tokenizer.zip",
+    "puli-llumix": "https://nc.nlp.nytud.hu/s/q58JCsqtPAeyAxd/download/puli-llumix-tokenizer.zip"
 }
 
 

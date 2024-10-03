@@ -5,7 +5,7 @@ from typing import Callable, List, Union
 import time
 import torch
 
-from puli.models import puli2_gpt, puli3_gpt_neox
+from puli.models import puli2_gpt, puli3_gpt_neox, puli_llumix
 from puli.tokenizer import Tokenizer
 
 
@@ -17,13 +17,8 @@ class Puli:
         model_path: str,
         tokenizer_path: str,
         device: torch.device,
-        profile: bool = False,
         compile: bool = False,
-        seed: int = 42,
     ) -> Puli:
-
-        torch.manual_seed(seed)
-        torch.cuda.manual_seed(seed)
 
         start_time = time.time()
 
@@ -41,7 +36,7 @@ class Puli:
         print(f"Model created and loaded in {time.time() - start_time:.2f} seconds from {model_path}")
         print(f"Model has {model.get_num_params()/1e6}M parameters.")
 
-        return Puli(model, tokenizer, model_args, device, profile)
+        return Puli(model, tokenizer, model_args, device)
 
     @staticmethod
     def initialize_model(model_name: str):
@@ -56,22 +51,20 @@ class Puli:
             model_args = puli3_gpt_neox.ModelArgs()
             return puli3_gpt_neox.Puli3GptNeox(model_args), model_args
 
+        elif model_name == "puli-llumix":
+
+            model_args = puli_llumix.ModelArgs()
+            return puli_llumix.PuliLlumix(model_args), model_args
+
         else:
             raise ValueError(f"Model unrecognised! Got {model_name}.")
 
-    def __init__(self, model, tokenizer, model_args, device: torch.device, use_profile: bool = True) -> None:
+    def __init__(self, model, tokenizer, model_args, device: torch.device) -> None:
 
         self.model = model
         self.tokenizer = tokenizer
         self.model_args = model_args
         self.device = device
-
-        self.prof = torch.profiler.profile(
-            schedule=torch.profiler.schedule(wait=1, warmup=1, active=3, repeat=1),
-            on_trace_ready=torch.profiler.tensorboard_trace_handler("./log"),
-            record_shapes=True,
-            with_stack=True,
-        ) if use_profile else None
 
     def text_completion(
         self,
@@ -92,13 +85,9 @@ class Puli:
 
         input_tokens = self.tokenizer.encode(prompt, bos=False, eos=False).to(self.device)
 
-        if profile and self.prof: self.prof.start()
-
         generation_tokens = self.generate(
             input_tokens, max_new_tokens, temperature, strategy, **decode_kwargs
         )
-
-        if profile and self.prof: self.prof.stop()
 
         return self.tokenizer.decode(generation_tokens.squeeze(0).tolist())
 
@@ -217,16 +206,3 @@ class Puli:
         idx_next = torch.gather(probs_idx, -1, idx_next)
 
         return idx_next
-
-    def calculate_token_per_second(self, inputs: torch.Tensor, n: int = 100) -> float:
-
-        start_time = time.time()
-        self.generate(inputs, n, temperature=1.0, strategy="greedy_decode")
-        end_time = time.time()
-
-        total_time = end_time - start_time
-
-        return n / total_time
-
-
-
